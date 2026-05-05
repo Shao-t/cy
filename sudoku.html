@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>數獨</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ===== CSS VARIABLES ===== */
+:root {
+  --bg: #f5f1e8;
+  --surface: #fff8f0;
+  --card: #fffbf5;
+  --border: #e8dcc4;
+  --border-block: #d4a574;
+  --accent: #c97d3b;
+  --accent2: #8b6f47;
+  --accent3: #c97d3b;
+  --text: #3a3a3a;
+  --text-muted: #8b8b7e;
+  --given: #1a1a1a;
+  --player: #8b6f47;
+  --error-bg: #ffe8e8;
+  --error-text: #b83c3c;
+  --success: #5a8d4a;
+  --cell-size: 54px;
+  --gap: 2px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 50% at 15% 5%, rgba(139,111,71,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 85% 90%, rgba(201,125,59,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 80% 10%, rgba(180,140,100,0.05) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#fireworks {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  display: none;
+}
+#fireworks.active { display: block; }
+
+/* ===== LAYOUT ===== */
+.container {
+  width: 100%;
+  max-width: 980px;
+  padding: 24px 16px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ===== HEADER ===== */
+header {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.6rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, #c97d3b 0%, #8b6f47 50%, #d4a574 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.timer {
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== CONTROLS ===== */
+.controls {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.diff-btn {
+  padding: 9px 0;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.diff-btn:hover { border-color: var(--accent); color: var(--accent); }
+.diff-btn.active {
+  background: linear-gradient(135deg, rgba(201,125,59,0.15), rgba(212,165,116,0.1));
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 500;
+}
+.diff-btn[data-diff="hell"].active {
+  background: linear-gradient(135deg, rgba(184,60,60,0.15), rgba(255,140,100,0.1));
+  border-color: var(--error-text);
+  color: var(--error-text);
+}
+.diff-btn[data-diff="hell"]:hover { border-color: var(--error-text); color: var(--error-text); }
+
+.controls-row2 {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.new-btn {
+  padding: 10px 32px;
+  background: linear-gradient(135deg, #c97d3b, #d4a574);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.05em;
+}
+.new-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(201,125,59,0.3);
+}
+
+/* ===== STATUS BAR ===== */
+.status-bar {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 0 2px;
+  min-height: 22px;
+}
+#errorCount.has-error { color: var(--error-text); }
+#scoreDisplay { color: var(--accent); font-weight: 500; }
+
+.combo-display {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--accent3);
+  opacity: 0;
+  transition: opacity 0.3s;
+  text-shadow: 0 0 12px rgba(244,114,182,0.8);
+}
+.combo-display.show { opacity: 1; }
+
+.status-msg {
+  width: 100%;
+  text-align: center;
+  font-size: 0.9rem;
+  min-height: 22px;
+  color: var(--text-muted);
+  transition: all 0.3s;
+}
+.status-msg.win {
+  color: #5a8d4a;
+  font-size: 1rem;
+  font-weight: 500;
+  text-shadow: 0 0 16px rgba(90,141,74,0.5);
+  animation: winPulse 1.5s ease infinite;
+}
+@keyframes winPulse {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ===== GAME AREA: board + numpad side by side ===== */
+.game-area {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  width: 100%;
+  justify-content: center;
+}
+
+/* ===== BOARD ===== */
+.board-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+#particleCanvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  border-radius: 10px;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(9, var(--cell-size));
+  grid-template-rows: repeat(9, var(--cell-size));
+  gap: var(--gap);
+  background: var(--border);
+  border: 2px solid var(--border-block);
+  border-radius: 10px;
+  padding: var(--gap);
+  box-shadow:
+    0 0 40px rgba(201,125,59,0.08),
+    0 0 80px rgba(212,165,116,0.03),
+    inset 0 0 30px rgba(0,0,0,0.02);
+  position: relative;
+  z-index: 1;
+}
+
+/* ===== CELL ===== */
+.cell {
+  width: var(--cell-size);
+  height: var(--cell-size);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 1.25rem;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+  position: relative;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.cell[data-col="2"], .cell[data-col="5"] { border-right: 2px solid var(--border-block); }
+.cell[data-row="2"], .cell[data-row="5"] { border-bottom: 2px solid var(--border-block); }
+.cell.given     { color: var(--given); cursor: default; }
+.cell.player-input { color: var(--player); }
+.cell.selected  { background: rgba(201,125,59,0.15); box-shadow: inset 0 0 0 2px var(--accent); }
+.cell.highlight { background: rgba(201,125,59,0.06); }
+.cell.error {
+  background: var(--error-bg);
+  color: var(--error-text);
+  animation: shake 0.3s ease;
+}
+.cell.combo-glow { animation: comboGlow 0.6s ease; }
+@keyframes comboGlow {
+  0%   { box-shadow: inset 0 0 0 2px #c97d3b, 0 0 20px rgba(201,125,59,0.8); }
+  100% { box-shadow: none; }
+}
+.cell.win-flash { animation: winFlash 0.5s ease forwards; }
+@keyframes winFlash {
+  0%   { background: rgba(90,141,74,0.4); color: #1a1a1a; }
+  50%  { background: rgba(201,125,59,0.3); }
+  100% { background: var(--surface); }
+}
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  25%     { transform: translateX(-3px); }
+  75%     { transform: translateX(3px); }
+}
+
+/* ===== NUMPAD PANEL (right side) ===== */
+.numpad-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.num-btn {
+  width: 72px;
+  height: 72px;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+  font-size: 1.6rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.num-btn:hover {
+  border-color: var(--accent);
+  background: rgba(201,125,59,0.1);
+  color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(201,125,59,0.25);
+}
+.num-btn:active { transform: translateY(0); }
+
+.num-btn.erase {
+  grid-column: span 3;
+  height: 52px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+.num-btn.erase:hover {
+  border-color: var(--error-text);
+  color: var(--error-text);
+  box-shadow: 0 4px 12px rgba(255,107,107,0.3);
+}
+
+/* Remaining count badges on num buttons */
+.num-btn .remain {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.num-btn { position: relative; }
+.num-btn.complete {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* ===== SCORE POPUP ===== */
+.score-popup {
+  position: absolute;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.82rem;
+  font-weight: 500;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: floatUp 0.9s ease forwards;
+  white-space: nowrap;
+  z-index: 10;
+}
+.score-popup.good  { color: #5a8d4a; text-shadow: 0 0 8px rgba(90,141,74,0.6); }
+.score-popup.bad   { color: var(--error-text); }
+.score-popup.combo { color: #c97d3b; font-size: 0.95rem; text-shadow: 0 0 10px rgba(201,125,59,0.7); }
+@keyframes floatUp {
+  0%   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-44px); }
+}
+
+/* ===== LEADERBOARD ===== */
+.leaderboard {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  margin-top: 8px;
+}
+.leaderboard h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.2rem;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.lb-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.lb-table-wrap { overflow-x: auto; }
+.lb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.lb-table th {
+  color: var(--text-muted);
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 400;
+  white-space: nowrap;
+}
+.lb-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  color: var(--text);
+  white-space: nowrap;
+}
+.lb-table tr:last-child td { border-bottom: none; }
+.lb-table tr:hover td { background: rgba(201,125,59,0.05); }
+.lb-table tr:nth-child(1) td:first-child { color: #ffd700; font-weight: 500; }
+.lb-table tr:nth-child(2) td:first-child { color: #c0c0c0; font-weight: 500; }
+.lb-table tr:nth-child(3) td:first-child { color: #cd7f32; font-weight: 500; }
+.lb-table tr.new-entry td {
+  background: rgba(90,141,74,0.1);
+  animation: newRow 1s ease;
+}
+@keyframes newRow {
+  0% { background: rgba(90,141,74,0.25); }
+  100% { background: rgba(90,141,74,0.1); }
+}
+.diff-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+}
+.diff-tag.beginner { background: rgba(90,141,74,0.2); color: #5a8d4a; }
+.diff-tag.easy     { background: rgba(139,111,71,0.2); color: #8b6f47; }
+.diff-tag.medium   { background: rgba(201,125,59,0.2);  color: #c97d3b; }
+.diff-tag.hard     { background: rgba(184,60,60,0.2);  color: #b83c3c; }
+.diff-tag.expert   { background: rgba(180,140,100,0.2); color: #a68c64; }
+.diff-tag.hell     { background: rgba(184,60,60,0.2); color: #b83c3c; }
+.lb-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 24px 0;
+  font-size: 0.82rem;
+}
+.clear-btn {
+  margin-top: 14px;
+  padding: 7px 16px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.clear-btn:hover { border-color: var(--error-text); color: var(--error-text); }
+
+/* ===== PAUSE BUTTON ===== */
+.pause-btn {
+  padding: 10px 24px;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.05em;
+  margin-left: 8px;
+}
+.pause-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 4px 12px rgba(201,125,59,0.2);
+}
+.pause-btn.active {
+  background: rgba(201,125,59,0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ===== PAUSED STATE ===== */
+.game-area.paused { opacity: 0.5; pointer-events: none; }
+.numpad-panel.paused .num-btn { opacity: 0.5; pointer-events: none; cursor: not-allowed; }
+.board.paused { opacity: 0.5; pointer-events: none; }
+.board.paused .cell { cursor: not-allowed; }
+
+.pause-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 50;
+  align-items: center;
+  justify-content: center;
+}
+.pause-overlay.active {
+  display: flex;
+}
+
+.pause-message {
+  background: var(--card);
+  border: 2px solid var(--border-block);
+  border-radius: 16px;
+  padding: 32px 40px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  z-index: 51;
+}
+
+.pause-message h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2rem;
+  color: var(--accent);
+  margin-bottom: 12px;
+  font-weight: 900;
+}
+
+.pause-message p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin-bottom: 20px;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 700px) {
+  :root { --cell-size: 36px; }
+  .game-area { flex-direction: column; align-items: center; }
+  .numpad-panel { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+  .numpad-grid { grid-template-columns: repeat(5, 1fr); }
+  .num-btn { width: 52px; height: 52px; font-size: 1.3rem; }
+  .num-btn.erase { grid-column: span 5; height: 42px; }
+  h1 { font-size: 1.8rem; }
+}
+</style>
+</head>
+<body>
+<canvas id="fireworks"></canvas>
+<div class="container">
+  <header>
+    <h1>數獨</h1>
+    <span class="timer" id="timer">00:00</span>
+  </header>
+
+  <div class="controls">
+    <button class="diff-btn active" data-diff="beginner">入門</button>
+    <button class="diff-btn" data-diff="easy">簡單</button>
+    <button class="diff-btn" data-diff="medium">中等</button>
+    <button class="diff-btn" data-diff="hard">困難</button>
+    <button class="diff-btn" data-diff="expert">專家</button>
+    <button class="diff-btn" data-diff="hell">地獄</button>
+  </div>
+
+  <div class="controls-row2">
+    <button class="new-btn" id="newGame">新遊戲</button>
+    <button class="pause-btn" id="pauseBtn">⏸ 暫停</button>
+  </div>
+
+  <div class="status-bar">
+    <span id="errorCount">錯誤：0</span>
+    <span class="combo-display" id="comboDisplay"></span>
+    <span id="scoreDisplay">分數：0</span>
+  </div>
+
+  <div class="status-msg" id="statusMsg"></div>
+
+  <!-- Board + Numpad side by side -->
+  <div class="game-area">
+    <div class="board-wrapper">
+      <canvas id="particleCanvas"></canvas>
+      <div class="board" id="board"></div>
+    </div>
+
+    <div class="numpad-panel">
+      <div class="numpad-grid" id="numpad"></div>
+    </div>
+  </div>
+
+  <!-- Leaderboard -->
+  <div class="leaderboard">
+    <h2>排行榜 <span class="lb-sub">Top 10</span></h2>
+    <div class="lb-table-wrap">
+      <table class="lb-table">
+        <thead>
+          <tr>
+            <th>#</th><th>難度</th><th>分數</th><th>用時</th><th>錯誤</th><th>日期</th>
+          </tr>
+        </thead>
+        <tbody id="lbBody">
+          <tr><td colspan="6" class="lb-empty">尚無紀錄，完成一局開始記錄！</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <button class="clear-btn" id="clearLb">清除紀錄</button>
+  </div>
+
+  <!-- Pause Overlay -->
+  <div class="pause-overlay" id="pauseOverlay">
+    <div class="pause-message">
+      <h3>⏸ 遊戲已暫停</h3>
+      <p>按下「繼續」按鈕恢復遊戲</p>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== BLOCK 1: 遊戲狀態 ===== */
+const STATE = {
+  solution:   [],
+  puzzle:     [],
+  board:      [],
+  given:      [],
+  selected:   -1,
+  errors:     0,
+  difficulty: 'beginner',
+  timerInterval: null,
+  seconds:    0,
+  finished:   false,
+  paused:     false,
+  score:      0,
+  combo:      0,
+  basePerCell: 100,
+  _recordToken: 0, // FIX: unique token per game session to fix new-entry detection
+};
+
+
+/* ===== BLOCK 2: 數獨產生器 ===== */
+function generateSolution() {
+  const grid = Array(81).fill(0);
+  fillGrid(grid);
+  return grid;
+}
+
+function fillGrid(grid) {
+  const empty = grid.indexOf(0);
+  if (empty === -1) return true;
+  const nums = shuffle([1,2,3,4,5,6,7,8,9]);
+  for (const n of nums) {
+    if (isValid(grid, empty, n)) {
+      grid[empty] = n;
+      if (fillGrid(grid)) return true;
+      grid[empty] = 0;
+    }
+  }
+  return false;
+}
+
+function isValid(grid, index, num) {
+  const row = Math.floor(index / 9);
+  const col = index % 9;
+  const boxRow = Math.floor(row / 3) * 3;
+  const boxCol = Math.floor(col / 3) * 3;
+  for (let i = 0; i < 9; i++) {
+    if (grid[row * 9 + i] === num) return false;
+    if (grid[i * 9 + col] === num) return false;
+    const br = boxRow + Math.floor(i / 3);
+    const bc = boxCol + (i % 3);
+    if (grid[br * 9 + bc] === num) return false;
+  }
+  return true;
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+
+/* ===== BLOCK 3: 難度控制 ===== */
+const DIFFICULTY_CONFIG = {
+  beginner: { holes: 25, multiplier: 0.8,  label: '入門' },
+  easy:     { holes: 36, multiplier: 1.0,  label: '簡單' },
+  medium:   { holes: 46, multiplier: 1.5,  label: '中等' },
+  hard:     { holes: 52, multiplier: 2.0,  label: '困難' },
+  expert:   { holes: 58, multiplier: 2.5,  label: '專家' },
+  hell:     { holes: 64, multiplier: 3.0,  label: '地獄' },
+};
+
+/* FIX 1: 挖洞後驗證唯一解，不符合則重試，最多 20 次 */
+function countSolutions(grid, limit = 2) {
+  let count = 0;
+  function solve(g) {
+    if (count >= limit) return;
+    const empty = g.indexOf(0);
+    if (empty === -1) { count++; return; }
+    for (let n = 1; n <= 9; n++) {
+      if (isValid(g, empty, n)) {
+        g[empty] = n;
+        solve(g);
+        g[empty] = 0;
+      }
+    }
+  }
+  solve([...grid]);
+  return count;
+}
+
+function applyDifficulty(solution, difficulty) {
+  const holes  = DIFFICULTY_CONFIG[difficulty]?.holes || 36;
+  const maxTries = 20;
+
+  for (let attempt = 0; attempt < maxTries; attempt++) {
+    const puzzle  = [...solution];
+    const indices = shuffle([...Array(81).keys()]);
+    for (let i = 0; i < holes; i++) puzzle[indices[i]] = 0;
+
+    // 地獄難度跳過唯一解驗證（solver 太慢）；其他難度確保唯一解
+    if (difficulty === 'hell' || countSolutions(puzzle) === 1) {
+      return puzzle;
+    }
+  }
+  // fallback: 退一格難度
+  const safePuzzle = [...solution];
+  const indices = shuffle([...Array(81).keys()]);
+  for (let i = 0; i < holes - 4; i++) safePuzzle[indices[i]] = 0;
+  return safePuzzle;
+}
+
+
+/* ===== BLOCK 4: 計時器 ===== */
+function startTimer() {
+  stopTimer();
+  STATE.seconds = 0;
+  STATE.paused = false;
+  updateTimerDisplay();
+  resumeTimer();
+}
+
+function stopTimer() {
+  if (STATE.timerInterval) {
+    clearInterval(STATE.timerInterval);
+    STATE.timerInterval = null;
+  }
+}
+
+function pauseTimer() {
+  if (STATE.paused || STATE.finished) return;
+  STATE.paused = true;
+  stopTimer();
+  updatePauseUI();
+}
+
+function resumeTimer() {
+  if (!STATE.paused && STATE.timerInterval) return;
+  STATE.paused = false;
+  STATE.timerInterval = setInterval(() => {
+    STATE.seconds++;
+    updateTimerDisplay();
+  }, 1000);
+  updatePauseUI();
+}
+
+function updatePauseUI() {
+  const pauseBtn = document.getElementById('pauseBtn');
+  const pauseOverlay = document.getElementById('pauseOverlay');
+  const gameArea = document.querySelector('.game-area');
+  const boardEl = document.getElementById('board');
+  const numpadPanel = document.querySelector('.numpad-panel');
+
+  if (STATE.paused) {
+    pauseBtn.classList.add('active');
+    pauseBtn.textContent = '▶ 繼續';
+    pauseOverlay.classList.add('active');
+    if (gameArea) gameArea.classList.add('paused');
+    if (boardEl) boardEl.classList.add('paused');
+    if (numpadPanel) numpadPanel.classList.add('paused');
+  } else {
+    pauseBtn.classList.remove('active');
+    pauseBtn.textContent = '⏸ 暫停';
+    pauseOverlay.classList.remove('active');
+    if (gameArea) gameArea.classList.remove('paused');
+    if (boardEl) boardEl.classList.remove('paused');
+    if (numpadPanel) numpadPanel.classList.remove('paused');
+  }
+}
+
+function updateTimerDisplay() {
+  const m = String(Math.floor(STATE.seconds / 60)).padStart(2, '0');
+  const s = String(STATE.seconds % 60).padStart(2, '0');
+  document.getElementById('timer').textContent = `${m}:${s}`;
+}
+
+function formatTime(seconds) {
+  const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const s = String(seconds % 60).padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+
+/* ===== BLOCK 5: 格子渲染 ===== */
+function renderBoard() {
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+
+  /* FIX 2: 在下一個 rAF 後才讀 offsetWidth，避免 0 的問題 */
+  requestAnimationFrame(() => {
+    const pc = document.getElementById('particleCanvas');
+    pc.width  = boardEl.offsetWidth;
+    pc.height = boardEl.offsetHeight;
+  });
+
+  for (let i = 0; i < 81; i++) {
+    const cell = document.createElement('div');
+    cell.classList.add('cell');
+    cell.dataset.index = i;
+    cell.dataset.row   = Math.floor(i / 9);
+    cell.dataset.col   = i % 9;
+
+    if (STATE.given[i]) {
+      cell.classList.add('given');
+      cell.textContent = STATE.puzzle[i];
+    } else if (STATE.board[i] !== 0) {
+      cell.classList.add('player-input');
+      cell.textContent = STATE.board[i];
+    }
+
+    cell.addEventListener('click', () => onCellClick(i));
+    boardEl.appendChild(cell);
+  }
+}
+
+function renderNumpad() {
+  const pad = document.getElementById('numpad');
+  pad.innerHTML = '';
+  for (let n = 1; n <= 9; n++) {
+    const btn = document.createElement('button');
+    btn.className   = 'num-btn';
+    btn.dataset.num = n;
+    btn.innerHTML   = `${n}<span class="remain"></span>`;
+    btn.addEventListener('click', () => onNumInput(n));
+    pad.appendChild(btn);
+  }
+  const erase = document.createElement('button');
+  erase.className   = 'num-btn erase';
+  erase.textContent = '清除';
+  erase.addEventListener('click', () => onNumInput(0));
+  pad.appendChild(erase);
+  updateNumpadRemain();
+}
+
+/* 更新每個數字按鈕的剩餘數量 */
+function updateNumpadRemain() {
+  for (let n = 1; n <= 9; n++) {
+    const btn = document.querySelector(`.num-btn[data-num="${n}"]`);
+    if (!btn) continue;
+    const used = STATE.board.filter(v => v === n).length;
+    const remain = 9 - used;
+    const span = btn.querySelector('.remain');
+    if (span) span.textContent = remain > 0 ? remain : '';
+    btn.classList.toggle('complete', remain <= 0);
+  }
+}
+
+function updateCellDisplay(index) {
+  const cell = document.querySelector(`.cell[data-index="${index}"]`);
+  if (!cell) return;
+  cell.classList.remove('player-input', 'error', 'combo-glow');
+  cell.textContent = STATE.board[index] !== 0 ? STATE.board[index] : '';
+  if (STATE.board[index] !== 0) cell.classList.add('player-input');
+}
+
+function highlightRelated(index) {
+  document.querySelectorAll('.cell').forEach(c => c.classList.remove('selected','highlight'));
+  if (index === -1) return;
+  const row    = Math.floor(index / 9);
+  const col    = index % 9;
+  const boxRow = Math.floor(row / 3) * 3;
+  const boxCol = Math.floor(col / 3) * 3;
+
+  document.querySelectorAll('.cell').forEach(c => {
+    const idx = parseInt(c.dataset.index);
+    const r   = Math.floor(idx / 9);
+    const cl  = idx % 9;
+    const br  = Math.floor(r / 3) * 3;
+    const bc  = Math.floor(cl / 3) * 3;
+    if (idx === index)                                   c.classList.add('selected');
+    else if (r === row || cl === col || (br === boxRow && bc === boxCol))
+                                                         c.classList.add('highlight');
+  });
+}
+
+
+/* ===== BLOCK 6: 玩家輸入處理 ===== */
+function onCellClick(index) {
+  if (STATE.finished || STATE.paused) return;
+  STATE.selected = index;
+  highlightRelated(index);
+}
+
+function onNumInput(num) {
+  if (STATE.finished || STATE.paused) return;
+  const idx = STATE.selected;
+  if (idx === -1 || STATE.given[idx]) return;
+
+  if (num === 0) {
+    STATE.board[idx] = 0;
+    updateCellDisplay(idx);
+    clearCellError(idx);
+    updateNumpadRemain();
+    return;
+  }
+
+  STATE.board[idx] = num;
+  updateCellDisplay(idx);
+  const correct = checkError(idx);
+  if (correct) {
+    handleCorrectInput(idx);
+    updateNumpadRemain();
+  }
+  checkWin();
+}
+
+document.addEventListener('keydown', e => {
+  if (STATE.selected === -1) return;
+  const n = parseInt(e.key);
+  if (n >= 1 && n <= 9) { onNumInput(n); return; }
+  if (e.key === 'Backspace' || e.key === 'Delete') { onNumInput(0); return; }
+  const moves = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 9, ArrowUp: -9 };
+  if (moves[e.key] !== undefined) {
+    e.preventDefault();
+    const next = STATE.selected + moves[e.key];
+    if (next >= 0 && next < 81) { STATE.selected = next; highlightRelated(next); }
+  }
+});
+
+
+/* ===== BLOCK 7: 錯誤提示邏輯 ===== */
+function checkError(index) {
+  const cell = document.querySelector(`.cell[data-index="${index}"]`);
+  if (!cell) return false;
+
+  if (STATE.board[index] !== STATE.solution[index]) {
+    STATE.errors++;
+    STATE.combo = 0;
+    cell.classList.add('error');
+    updateErrorDisplay();
+    updateComboDisplay();
+    STATE.score = Math.max(0, STATE.score - 50);
+    updateScoreDisplay();
+    showScorePopup(index, '-50', 'bad');
+    return false;
+  } else {
+    cell.classList.remove('error');
+    return true;
+  }
+}
+
+function clearCellError(index) {
+  const cell = document.querySelector(`.cell[data-index="${index}"]`);
+  if (cell) cell.classList.remove('error');
+}
+
+function updateErrorDisplay() {
+  const el = document.getElementById('errorCount');
+  el.textContent = `錯誤：${STATE.errors}`;
+  el.classList.toggle('has-error', STATE.errors > 0);
+}
+
+function handleCorrectInput(index) {
+  STATE.combo++;
+  updateComboDisplay();
+
+  const mult       = DIFFICULTY_CONFIG[STATE.difficulty]?.multiplier || 1;
+  const comboBonus = STATE.combo >= 5 ? 50 : 0;
+  const gained     = Math.floor((STATE.basePerCell + comboBonus) * mult);
+  STATE.score     += gained;
+  updateScoreDisplay();
+
+  const cell = document.querySelector(`.cell[data-index="${index}"]`);
+  if (STATE.combo >= 5 && cell) {
+    cell.classList.remove('combo-glow');
+    void cell.offsetWidth;
+    cell.classList.add('combo-glow');
+    showScorePopup(index, `+${gained} 🔥×${STATE.combo}`, 'combo');
+  } else {
+    showScorePopup(index, `+${gained}`, 'good');
+  }
+
+  spawnParticles(index);
+}
+
+function updateComboDisplay() {
+  const el = document.getElementById('comboDisplay');
+  if (STATE.combo >= 3) {
+    el.textContent = `COMBO × ${STATE.combo} 🔥`;
+    el.classList.add('show');
+  } else {
+    el.textContent = '';
+    el.classList.remove('show');
+  }
+}
+
+
+/* ===== BLOCK 8: 計分系統 ===== */
+function updateScoreDisplay() {
+  document.getElementById('scoreDisplay').textContent = `分數：${STATE.score}`;
+}
+
+function showScorePopup(index, text, type) {
+  const cell    = document.querySelector(`.cell[data-index="${index}"]`);
+  const boardEl = document.getElementById('board');
+  if (!cell || !boardEl) return;
+
+  const popup = document.createElement('div');
+  popup.className = `score-popup ${type}`;
+  popup.textContent = text;
+
+  const cellRect  = cell.getBoundingClientRect();
+  const boardRect = boardEl.getBoundingClientRect();
+  popup.style.left = (cellRect.left - boardRect.left + cellRect.width / 2) + 'px';
+  popup.style.top  = (cellRect.top  - boardRect.top) + 'px';
+
+  boardEl.appendChild(popup);
+  setTimeout(() => popup.remove(), 950);
+}
+
+
+/* ===== BLOCK 9: 粒子特效 ===== */
+const particles = [];
+
+function spawnParticles(cellIndex) {
+  const canvas  = document.getElementById('particleCanvas');
+  const boardEl = document.getElementById('board');
+  const cell    = document.querySelector(`.cell[data-index="${cellIndex}"]`);
+  if (!cell || !canvas) return;
+
+  canvas.width  = boardEl.offsetWidth;
+  canvas.height = boardEl.offsetHeight;
+
+  const cellRect  = cell.getBoundingClientRect();
+  const boardRect = boardEl.getBoundingClientRect();
+  const cx = cellRect.left - boardRect.left + cellRect.width  / 2;
+  const cy = cellRect.top  - boardRect.top  + cellRect.height / 2;
+
+  const colors = ['#a78bfa','#e8c547','#4ade80','#f472b6','#60a5fa'];
+  for (let i = 0; i < 10; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1.5 + Math.random() * 2.5;
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      alpha: 1,
+      radius: 2 + Math.random() * 2,
+      color: colors[Math.floor(Math.random() * colors.length)],
+    });
+  }
+
+  if (!canvas._animating) runParticles();
+}
+
+function runParticles() {
+  const canvas = document.getElementById('particleCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  canvas._animating = true;
+
+  function frame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.08;
+      p.alpha -= 0.03;
+      if (p.alpha <= 0) { particles.splice(i, 1); continue; }
+      ctx.globalAlpha = p.alpha;
+      ctx.fillStyle   = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (particles.length > 0) requestAnimationFrame(frame);
+    else canvas._animating = false;
+  }
+  requestAnimationFrame(frame);
+}
+
+
+/* ===== BLOCK 10: 煙火特效 ===== */
+let fwAnimId = null;
+const fwParticles = [];
+
+function launchFireworks() {
+  const canvas = document.getElementById('fireworks');
+  canvas.classList.add('active');
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx     = canvas.getContext('2d');
+
+  let waves = 0;
+  const maxWaves = 6;
+  function launchWave() {
+    if (waves >= maxWaves) return;
+    waves++;
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => spawnFirework(ctx, canvas), i * 180);
+    }
+    setTimeout(launchWave, 600);
+  }
+  launchWave();
+
+  setTimeout(() => {
+    cancelAnimationFrame(fwAnimId);
+    canvas.classList.remove('active');
+    fwParticles.length = 0;
+  }, 5000);
+
+  animateFireworks(ctx, canvas);
+}
+
+function spawnFirework(ctx, canvas) {
+  const x = canvas.width  * (0.2 + Math.random() * 0.6);
+  const y = canvas.height * (0.1 + Math.random() * 0.5);
+  const colors = ['#e8c547','#a78bfa','#f472b6','#4ade80','#60a5fa','#fb923c','#fff'];
+  const color  = colors[Math.floor(Math.random() * colors.length)];
+  const count  = 60 + Math.floor(Math.random() * 40);
+
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;
+    const speed = 2 + Math.random() * 5;
+    fwParticles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      alpha: 1,
+      radius: 1.5 + Math.random() * 2,
+      color,
+      trail: [],
+    });
+  }
+}
+
+function animateFireworks(ctx, canvas) {
+  function frame() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = fwParticles.length - 1; i >= 0; i--) {
+      const p = fwParticles[i];
+      p.trail.push({ x: p.x, y: p.y });
+      if (p.trail.length > 5) p.trail.shift();
+      p.x  += p.vx;
+      p.y  += p.vy;
+      p.vy += 0.06;
+      p.vx *= 0.98;
+      p.alpha -= 0.018;
+
+      if (p.alpha <= 0) { fwParticles.splice(i, 1); continue; }
+
+      for (let t = 0; t < p.trail.length; t++) {
+        const a = (t / p.trail.length) * p.alpha * 0.4;
+        ctx.globalAlpha = a;
+        ctx.fillStyle   = p.color;
+        ctx.beginPath();
+        ctx.arc(p.trail[t].x, p.trail[t].y, p.radius * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = p.alpha;
+      ctx.fillStyle   = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = p.alpha * 0.3;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    fwAnimId = requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function winFlashSequence() {
+  const cells = document.querySelectorAll('.cell');
+  cells.forEach((cell, i) => {
+    setTimeout(() => {
+      cell.classList.add('win-flash');
+      setTimeout(() => cell.classList.remove('win-flash'), 500);
+    }, i * 18);
+  });
+}
+
+
+/* ===== BLOCK 11: 勝利判斷 ===== */
+function checkWin() {
+  const allCorrect = STATE.board.every((v, i) => v === STATE.solution[i]);
+  if (!allCorrect) return;
+
+  STATE.finished = true;
+  stopTimer();
+
+  let timeBonus = 1.0;
+  if      (STATE.seconds <= 180) timeBonus = 2.0;
+  else if (STATE.seconds <= 300) timeBonus = 1.5;
+
+  const perfectBonus = STATE.errors === 0 ? 500 : 0;
+  STATE.score = Math.floor(STATE.score * timeBonus) + perfectBonus;
+  STATE.score = Math.max(0, STATE.score);
+  updateScoreDisplay();
+
+  const m = String(Math.floor(STATE.seconds / 60)).padStart(2, '0');
+  const s = String(STATE.seconds % 60).padStart(2, '0');
+  const perfect = STATE.errors === 0 ? ' ✨完美！' : '';
+  const msg = document.getElementById('statusMsg');
+  msg.textContent = `🎉 完成！用時 ${m}:${s}${perfect}  最終得分：${STATE.score}`;
+  msg.classList.add('win');
+
+  setTimeout(() => winFlashSequence(), 100);
+  setTimeout(() => launchFireworks(), 400);
+
+  saveRecord();
+}
+
+
+/* ===== BLOCK 12: 排行榜 ===== */
+const LB_KEY = 'sudoku_leaderboard_v1';
+
+function loadRecords() {
+  try { return JSON.parse(localStorage.getItem(LB_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveRecord() {
+  const records = loadRecords();
+  const now     = new Date();
+  const dateStr = now.toLocaleDateString('zh-TW', { month:'2-digit', day:'2-digit' })
+                + ' ' + now.toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' });
+
+  /* FIX 3: 加入 token，每局唯一，排除分數＋時間撞單的誤判 */
+  const entry = {
+    difficulty: STATE.difficulty,
+    score:      STATE.score,
+    seconds:    STATE.seconds,
+    errors:     STATE.errors,
+    date:       dateStr,
+    token:      STATE._recordToken,
+  };
+
+  records.push(entry);
+  records.sort((a, b) => b.score - a.score || a.seconds - b.seconds);
+  const top10 = records.slice(0, 10);
+  localStorage.setItem(LB_KEY, JSON.stringify(top10));
+
+  renderLeaderboard(entry);
+}
+
+function renderLeaderboard(newEntry) {
+  const records = loadRecords();
+  const tbody   = document.getElementById('lbBody');
+  tbody.innerHTML = '';
+
+  if (records.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="lb-empty">尚無紀錄，完成一局開始記錄！</td></tr>`;
+    return;
+  }
+
+  const cfg = DIFFICULTY_CONFIG;
+  records.forEach((r, i) => {
+    const tr  = document.createElement('tr');
+    /* FIX 3: 用 token 識別新條目 */
+    const isNew = newEntry && r.token !== undefined && r.token === newEntry.token;
+    if (isNew) tr.classList.add('new-entry');
+
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}`;
+    tr.innerHTML = `
+      <td>${medal}</td>
+      <td><span class="diff-tag ${r.difficulty}">${cfg[r.difficulty]?.label || r.difficulty}</span></td>
+      <td><strong>${r.score.toLocaleString()}</strong></td>
+      <td>${formatTime(r.seconds)}</td>
+      <td>${r.errors}</td>
+      <td>${r.date}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function clearLeaderboard() {
+  if (!confirm('確定要清除所有紀錄嗎？')) return;
+  localStorage.removeItem(LB_KEY);
+  renderLeaderboard(null);
+}
+
+document.getElementById('clearLb').addEventListener('click', clearLeaderboard);
+
+
+/* ===== BLOCK 13: 遊戲初始化 ===== */
+function initGame() {
+  STATE.finished = false;
+  STATE.errors   = 0;
+  STATE.selected = -1;
+  STATE.score    = 0;
+  STATE.combo    = 0;
+  STATE._recordToken = Date.now() + Math.random(); // FIX 3: 每局唯一 token
+
+  STATE.solution = generateSolution();
+  STATE.puzzle   = applyDifficulty(STATE.solution, STATE.difficulty);
+  STATE.board    = [...STATE.puzzle];
+  STATE.given    = STATE.puzzle.map(v => v !== 0);
+
+  updateErrorDisplay();
+  updateScoreDisplay();
+  updateComboDisplay();
+
+  const msg = document.getElementById('statusMsg');
+  msg.textContent = '';
+  msg.classList.remove('win');
+
+  cancelAnimationFrame(fwAnimId);
+  fwParticles.length = 0;
+  document.getElementById('fireworks').classList.remove('active');
+
+  renderBoard();
+  renderNumpad();
+  startTimer();
+  renderLeaderboard(null);
+}
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    STATE.difficulty = btn.dataset.diff;
+    initGame();
+  });
+});
+
+document.getElementById('newGame').addEventListener('click', initGame);
+
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  if (STATE.finished) return;
+  if (STATE.paused) resumeTimer();
+  else pauseTimer();
+});
+
+// 點擊暫停遮罩也能繼續
+document.getElementById('pauseOverlay').addEventListener('click', () => {
+  if (STATE.paused) resumeTimer();
+});
+
+initGame();
+</script>
+</body>
+</html>
