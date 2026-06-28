@@ -752,6 +752,69 @@ async function downloadBuf(buf,filename,mimeType){
 
 const MAGIC=new Uint8Array([0xAE,0x53,0x47,0x01]);
 
+// ── EXIF STRIP ──
+// 只處理 JPEG（SOI = FF D8）。
+// JPEG 由數個 segment 組成，每段格式為：marker(2) + length(2) + data
+// APP1（FF E1）通常是 EXIF，APP2~APP15 也可能含元數據，一律移除。
+// 保留 SOI、DQT、SOF、DHT、SOS 及之後的影像資料。
+function stripExif(arrayBuffer) {
+  const data = new DataView(arrayBuffer);
+
+  // 確認是 JPEG（FF D8）
+  if (data.byteLength < 4 || data.getUint8(0) !== 0xFF || data.getUint8(1) !== 0xD8) {
+    return arrayBuffer; // 非 JPEG，原樣返回
+  }
+
+  const out = [new Uint8Array([0xFF, 0xD8])]; // 保留 SOI
+  let offset = 2;
+
+  while (offset < data.byteLength - 1) {
+    // 找下一個 marker（必須是 FF 開頭）
+    if (data.getUint8(offset) !== 0xFF) break;
+
+    const marker = data.getUint8(offset + 1);
+
+    // SOS（FF DA）開始後是壓縮影像資料，直接取到結尾
+    if (marker === 0xDA) {
+      out.push(new Uint8Array(arrayBuffer, offset));
+      break;
+    }
+
+    // EOI（FF D9）
+    if (marker === 0xD9) {
+      out.push(new Uint8Array([0xFF, 0xD9]));
+      break;
+    }
+
+    // standalone markers（無 length 欄位）
+    if (marker === 0xD8 || (marker >= 0xD0 && marker <= 0xD7)) {
+      out.push(new Uint8Array([0xFF, marker]));
+      offset += 2;
+      continue;
+    }
+
+    if (offset + 3 >= data.byteLength) break;
+    const segLen = data.getUint16(offset + 2); // includes the 2-byte length field itself
+    const segEnd = offset + 2 + segLen;
+
+    // APP1~APP15（FF E1 ~ FF EF）：EXIF / XMP / ICC 等元數據，跳過
+    if (marker >= 0xE1 && marker <= 0xEF) {
+      offset = segEnd;
+      continue;
+    }
+
+    // 其他 segment 保留（APP0/JFIF、DQT、SOF、DHT 等）
+    out.push(new Uint8Array(arrayBuffer, offset, 2 + segLen));
+    offset = segEnd;
+  }
+
+  // 合併所有保留的 segment
+  const total = out.reduce((s, a) => s + a.byteLength, 0);
+  const result = new Uint8Array(total);
+  let pos = 0;
+  for (const chunk of out) { result.set(chunk, pos); pos += chunk.byteLength; }
+  return result.buffer;
+}
 
 async function doFileEnc(){
   const pw=document.getElementById('fpw-enc').value;
@@ -779,16 +842,33 @@ async function doFileEnc(){
 
     parts.push(salt.buffer);
 
-    const totalChunks=Math.ceil(encFile.size / CHUNK_SIZE);
+    // 判斷是否為 JPEG，是的話先讀整個檔案 strip EXIF，再分 chunk 加密
+    const isJpeg = /\.(jpe?g)$/i.test(encFile.name) ||
+                   encFile.type === 'image/jpeg';
+    let strippedBuf = null;
+
+    if (isJpeg) {
+      stat('Removing EXIF metadata…', 'ok');
+      const raw = await encFile.arrayBuffer();
+      strippedBuf = stripExif(raw);
+    }
+
+    const sourceSize = strippedBuf ? strippedBuf.byteLength : encFile.size;
+    const totalChunks = Math.ceil(sourceSize / CHUNK_SIZE);
 
     parts.push(u32(totalChunks));
 
     for(let i=0;i<totalChunks;i++){
 
       const start=i*CHUNK_SIZE;
-      const end=Math.min(start+CHUNK_SIZE, encFile.size);
 
-      const chunk=await encFile.slice(start,end).arrayBuffer();
+      // JPEG 用 strip 後的 buffer 切 chunk；其他格式直接從 File 讀
+      let chunk;
+      if (strippedBuf) {
+        chunk = strippedBuf.slice(start, Math.min(start + CHUNK_SIZE, strippedBuf.byteLength));
+      } else {
+        chunk = await encFile.slice(start, Math.min(start + CHUNK_SIZE, encFile.size)).arrayBuffer();
+      }
 
       const iv=crypto.getRandomValues(new Uint8Array(12));
 
