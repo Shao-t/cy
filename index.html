@@ -70,36 +70,42 @@
   #lock-timer{font-size:36px;font-weight:300;letter-spacing:-.02em;color:var(--text);margin:8px 0;}
   #lock-sub{font-size:12px;color:var(--text3);line-height:1.5;}
 
-  /* MODE BAR */
-  .mode-bar{
-    display:flex;padding:8px;gap:4px;
+  /* TYPE TOGGLE */
+  .type-toggle{
+    display:flex;padding:10px;gap:6px;
     border-bottom:1px solid var(--border);
     background:var(--surface2);
   }
-  .mode-btn{
-    flex:1;padding:7px 12px;
-    font-family:inherit;font-size:12px;font-weight:500;
-    border:none;background:transparent;color:var(--text2);cursor:pointer;
-    border-radius:var(--radius-sm);transition:background .15s,color .15s;
-  }
-  .mode-btn.on{background:var(--surface);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.1);}
-  .mode-btn:hover:not(.on){background:rgba(0,0,0,.04);color:var(--text);}
-
-  /* TABS */
-  .tabs{
-    display:flex;padding:8px 16px;gap:0;
-    border-bottom:1px solid var(--border);
-  }
-  .tab{
-    flex:1;padding:9px 0;
+  .type-btn{
+    flex:1;padding:9px 12px;
     font-family:inherit;font-size:13px;font-weight:500;
-    border:none;background:transparent;color:var(--text2);cursor:pointer;
-    border-bottom:2px solid transparent;
-    transition:color .15s,border-color .15s;
-    text-align:center;
+    border:1.5px solid transparent;background:transparent;color:var(--text2);cursor:pointer;
+    border-radius:var(--radius-sm);transition:all .15s;
+    display:flex;align-items:center;justify-content:center;gap:6px;
   }
-  .tab:hover{color:var(--text);}
-  .tab.on{color:var(--blue);border-bottom-color:var(--blue);}
+  .type-btn.on{
+    background:var(--surface);color:var(--text);
+    border-color:var(--border);
+    box-shadow:0 1px 4px rgba(0,0,0,.08);
+  }
+  .type-btn:hover:not(.on){background:rgba(0,0,0,.04);color:var(--text);}
+
+  /* ACTION HINT */
+  .action-hint{
+    display:flex;align-items:center;gap:10px;
+    padding:12px 20px;
+    border-bottom:1px solid var(--border);
+    min-height:48px;
+  }
+  .action-badge{
+    font-size:11px;font-weight:600;letter-spacing:.04em;
+    padding:3px 9px;border-radius:980px;
+    flex-shrink:0;
+  }
+  .action-badge.enc{background:rgba(0,102,204,.1);color:var(--blue);}
+  .action-badge.dec{background:rgba(52,199,89,.12);color:#1a7a33;}
+  .action-badge.idle{background:var(--border);color:var(--text3);}
+  .action-desc{font-size:12px;color:var(--text3);line-height:1.4;}
 
   /* BODY */
   .body{padding:20px;}
@@ -242,13 +248,17 @@
 </div>
 
 <div class="card">
-  <div class="mode-bar">
-    <button class="mode-btn on" id="m-text" onclick="swMode('text')">TEXT</button>
-    <button class="mode-btn" id="m-file" onclick="swMode('file')">FILE (PDF / JPG / DOCX)</button>
+
+  <!-- 第一層：TEXT / FILE 切換 -->
+  <div class="type-toggle">
+    <button class="type-btn on" id="m-text" onclick="swMode('text')">文字</button>
+    <button class="type-btn" id="m-file" onclick="swMode('file')">檔案</button>
   </div>
-  <div class="tabs">
-    <button class="tab on" id="t-enc" onclick="sw('enc')">Encrypt</button>
-    <button class="tab" id="t-dec" onclick="sw('dec')">Decrypt</button>
+
+  <!-- 自動偵測狀態列 -->
+  <div class="action-hint" id="action-hint">
+    <span class="action-badge idle" id="action-badge">等待輸入</span>
+    <span class="action-desc" id="action-desc">貼入密文會自動切換為解密模式</span>
   </div>
 
   <div class="body">
@@ -257,122 +267,82 @@
 
     <!-- TEXT MODE -->
     <div id="mode-text">
-
-      <div id="p-enc">
-        <div class="field">
-          <div class="lbl">Password</div>
-          <input class="ipt" type="password" id="pw-enc" placeholder="enter shared password_" oninput="updateStrength(this.value,'sbar','slbl')">
-          <div class="strength-wrap">
-            <div class="strength-bar"><div class="strength-fill" id="sbar"></div></div>
-            <div class="strength-label" id="slbl">—</div>
-          </div>
+      <div class="field">
+        <div class="lbl">密碼</div>
+        <input class="ipt" type="password" id="pw-unified" placeholder="" oninput="updateStrength(this.value,'sbar','slbl')">
+        <div class="strength-wrap">
+          <div class="strength-bar"><div class="strength-fill" id="sbar"></div></div>
+          <div class="strength-label" id="slbl">—</div>
         </div>
-        <div class="field">
-          <div class="lbl">Plaintext</div>
-          <div class="pt-field">
-            <textarea id="pt" placeholder="enter message_"></textarea>
-            <div class="pt-hint">TAP TO REVEAL</div>
-          </div>
+      </div>
+      <div class="field">
+        <div class="lbl" id="input-lbl">輸入文字</div>
+        <div class="pt-field">
+          <textarea id="unified-input" placeholder="" oninput="detectMode(this.value)"></textarea>
         </div>
-        <div class="brow">
-          <button class="btn inv" onclick="doEnc()">Encrypt</button>
-          <button class="btn" onclick="clearEnc()">Clear</button>
+      </div>
+      <div class="brow">
+        <button class="btn inv" id="main-action-btn" onclick="doUnified()">加密</button>
+        <button class="btn" onclick="clearUnified()">清除</button>
+      </div>
+      <div class="field" id="output-field" style="display:none">
+        <div class="lbl" id="output-lbl">加密結果</div>
+        <div class="cipher-wrap">
+          <textarea class="ro" id="unified-output" readonly placeholder=""></textarea>
+          <div class="cipher-mask ro-mask" id="cout-mask"></div>
         </div>
-        <div class="field">
-          <div class="lbl">Ciphertext</div>
-          <div class="cipher-wrap">
-            <textarea class="ro" id="cout" readonly placeholder="awaiting input_"></textarea>
-            <div class="cipher-mask ro-mask" id="cout-mask"></div>
-          </div>
-          <div style="margin-top:7px">
-            <button class="btn-copy" onclick="cpTA('cout')">Copy</button>
-          </div>
+        <div style="margin-top:7px;display:flex;gap:8px;align-items:center;">
+          <button class="btn-copy" onclick="cpTA('unified-output')">複製</button>
         </div>
       </div>
 
-      <div id="p-dec" style="display:none">
-        <div class="field">
-          <div class="lbl">Password</div>
-          <input class="ipt" type="password" id="pw-dec" placeholder="enter shared password_">
-        </div>
-        <div class="field">
-          <div class="lbl">Ciphertext</div>
-          <div class="cipher-wrap">
-            <textarea id="cin" placeholder="paste ciphertext_"></textarea>
-            <div class="cipher-mask" id="cin-mask"></div>
-          </div>
-        </div>
-        <div class="brow">
-          <button class="btn inv" onclick="doDec()">Decrypt</button>
-          <button class="btn" onclick="clearDec()">Clear</button>
-        </div>
-        <div class="field">
-          <div class="lbl">Plaintext Output</div>
-          <div class="pt-field">
-            <textarea id="pout" readonly placeholder="awaiting input_"></textarea>
-            <div class="pt-hint" id="pout-hint">TAP TO REVEAL</div>
-          </div>
-        </div>
-      </div>
-
+      <input type="hidden" id="pw-enc">
+      <input type="hidden" id="pw-dec">
+      <textarea id="pt" style="display:none"></textarea>
+      <textarea id="cout" style="display:none"></textarea>
+      <textarea id="cin" style="display:none"></textarea>
+      <textarea id="pout" style="display:none"></textarea>
     </div>
 
     <!-- FILE MODE -->
     <div id="mode-file" style="display:none">
-
-      <div id="fp-enc">
-        <div class="field">
-          <div class="lbl">Password</div>
-          <input class="ipt" type="password" id="fpw-enc" placeholder="enter shared password_" oninput="updateStrength(this.value,'sbar2','slbl2')">
-          <div class="strength-wrap">
-            <div class="strength-bar"><div class="strength-fill" id="sbar2"></div></div>
-            <div class="strength-label" id="slbl2">—</div>
-          </div>
-        </div>
-        <div class="field">
-          <div class="lbl">Select File</div>
-          <div class="dropzone" id="dz-enc"
-            ondragover="dzOver(event,'dz-enc')" ondragleave="dzOut('dz-enc')" ondrop="dzDrop(event,'enc')">
-            <input type="file" id="file-enc" onchange="fileSelected('enc')">
-            <div class="dz-label">Drag & drop or click — PDF · JPG · DOCX · any file</div>
-            <div class="dz-file" id="fname-enc"></div>
-          </div>
-        </div>
-        <div class="brow">
-          <button class="btn inv" onclick="doFileEnc()">Encrypt File</button>
-          <button class="btn" onclick="clearFileEnc()">Clear</button>
-        </div>
-        <div class="file-result" id="fenc-result">
-          Encrypted: <b id="fenc-name"></b><br>
-          <span style="font-size:10px;color:var(--g3)">Saved to downloads.</span>
+      <div class="field">
+        <div class="lbl">密碼</div>
+        <input class="ipt" type="password" id="fpw-unified" placeholder="" oninput="updateStrength(this.value,'sbar2','slbl2')">
+        <div class="strength-wrap">
+          <div class="strength-bar"><div class="strength-fill" id="sbar2"></div></div>
+          <div class="strength-label" id="slbl2">—</div>
         </div>
       </div>
-
-      <div id="fp-dec" style="display:none">
-        <div class="field">
-          <div class="lbl">Password</div>
-          <input class="ipt" type="password" id="fpw-dec" placeholder="enter shared password_">
+      <div class="field">
+        <div class="lbl" id="file-input-lbl">選擇檔案</div>
+        <div class="dropzone" id="dz-unified"
+          ondragover="dzOver(event,'dz-unified')" ondragleave="dzOut('dz-unified')" ondrop="dzDropUnified(event)">
+          <input type="file" id="file-unified" onchange="fileSelectedUnified()">
+          <div class="dz-label" id="dz-label-text">拖曳或點擊選擇檔案<br><span style="color:var(--text3);font-size:11px">.enc 檔案會自動切換為解密模式</span></div>
+          <div class="dz-file" id="fname-unified"></div>
         </div>
-        <div class="field">
-          <div class="lbl">Select Encrypted File (.enc)</div>
-          <div class="dropzone" id="dz-dec"
-            ondragover="dzOver(event,'dz-dec')" ondragleave="dzOut('dz-dec')" ondrop="dzDrop(event,'dec')">
-            <input type="file" id="file-dec" accept=".enc" onchange="fileSelected('dec')">
-            <div class="dz-label">Drag & drop or click — .ENC file</div>
-            <div class="dz-file" id="fname-dec"></div>
-          </div>
-        </div>
-        <div class="brow">
-          <button class="btn inv" onclick="doFileDec()">Decrypt File</button>
-          <button class="btn" onclick="clearFileDec()">Clear</button>
-        </div>
-        <div class="file-result" id="fdec-result">
-          Decrypted: <b id="fdec-name"></b><br>
-          <span style="font-size:10px;color:var(--g3)">Saved to downloads.</span>
-        </div>
-        <div class="file-result" id="fdec-err"></div>
       </div>
+      <div class="brow">
+        <button class="btn inv" id="file-action-btn" onclick="doFileUnified()">加密檔案</button>
+        <button class="btn" onclick="clearFileUnified()">清除</button>
+      </div>
+      <div class="file-result" id="fenc-result">
+        已加密：<b id="fenc-name"></b>
+      </div>
+      <div class="file-result" id="fdec-result">
+        已解密：<b id="fdec-name"></b>
+      </div>
+      <div class="file-result" id="fdec-err"></div>
 
+      <input type="hidden" id="fpw-enc">
+      <input type="hidden" id="fpw-dec">
+      <div style="display:none">
+        <input type="file" id="file-enc">
+        <input type="file" id="file-dec">
+        <span id="fname-enc"></span>
+        <span id="fname-dec"></span>
+      </div>
     </div>
   </div>
 </div>
@@ -432,7 +402,9 @@
 })();
 
 // ── STATE ──
-let currentMode='text', encFile=null, decFile=null, _clearTimer=null;
+let currentMode='text', unifiedFile=null, fileIsEnc=false, _clearTimer=null;
+// 保留舊名稱供底層函式使用
+let encFile=null, decFile=null;
 
 // ── LOCK STATE ──
 let failCount=0, lockUntil=0, lockInterval=null;
@@ -517,28 +489,213 @@ function updateStrength(pw,barId,lblId){
   bar.style.width=L[s].w;bar.style.background=L[s].c;lbl.textContent=L[s].t;
 }
 
-// ── UI ──
-function sw(m){
-  const isFile=currentMode==='file';
-  if(isFile){
-    document.getElementById('fp-enc').style.display=m==='enc'?'':'none';
-    document.getElementById('fp-dec').style.display=m==='dec'?'':'none';
-  } else {
-    document.getElementById('p-enc').style.display=m==='enc'?'':'none';
-    document.getElementById('p-dec').style.display=m==='dec'?'':'none';
-  }
-  document.getElementById('t-enc').className='tab'+(m==='enc'?' on':'');
-  document.getElementById('t-dec').className='tab'+(m==='dec'?' on':'');
-}
+// ── UI MODE ──
 function swMode(m){
   currentMode=m;
   document.getElementById('mode-text').style.display=m==='text'?'':'none';
   document.getElementById('mode-file').style.display=m==='file'?'':'none';
-  document.getElementById('m-text').className='mode-btn'+(m==='text'?' on':'');
-  document.getElementById('m-file').className='mode-btn'+(m==='file'?' on':'');
-  const enc=document.getElementById('t-enc').classList.contains('on');
-  sw(enc?'enc':'dec');
+  document.getElementById('m-text').className='type-btn'+(m==='text'?' on':'');
+  document.getElementById('m-file').className='type-btn'+(m==='file'?' on':'');
+  // 重置 hint
+  if(m==='text') setActionHint('idle','等待輸入','貼入密文會自動切換為解密模式');
+  else setActionHint('idle','等待選擇','選擇 .enc 檔案會自動切換為解密模式');
 }
+
+function setActionHint(type, badge, desc){
+  const b=document.getElementById('action-badge');
+  const d=document.getElementById('action-desc');
+  b.className='action-badge '+type;
+  b.textContent=badge;
+  d.textContent=desc;
+}
+
+// ── 文字模式自動偵測 ──
+// 密文特徵：純 hex 字串，長度 >= 80
+function looksLikeCiphertext(val){
+  const v=val.replace(/\s+/g,'');
+  return v.length>=80 && /^[0-9a-fA-F]+$/.test(v);
+}
+
+let textIsDecMode=false;
+function detectMode(val){
+  const wasDecMode=textIsDecMode;
+  textIsDecMode=looksLikeCiphertext(val);
+
+  const btn=document.getElementById('main-action-btn');
+  const inputLbl=document.getElementById('input-lbl');
+  const outputField=document.getElementById('output-field');
+
+  if(textIsDecMode){
+    btn.textContent='解密';
+    btn.style.background='var(--green)';
+    inputLbl.textContent='密文';
+    setActionHint('dec','解密模式','偵測到密文格式，輸入密碼後按解密');
+    // 有輸出時清除（切換方向）
+    if(!wasDecMode){ document.getElementById('unified-output').value=''; outputField.style.display='none'; }
+  } else {
+    btn.textContent='加密';
+    btn.style.background='';
+    inputLbl.textContent='輸入文字';
+    if(val.trim()==='') setActionHint('idle','等待輸入','貼入密文會自動切換為解密模式');
+    else setActionHint('enc','加密模式','輸入密碼後按加密');
+    if(wasDecMode){ document.getElementById('unified-output').value=''; outputField.style.display='none'; }
+  }
+}
+
+// ── 文字：統一執行 ──
+async function doUnified(){
+  const pw=document.getElementById('pw-unified').value;
+  const input=document.getElementById('unified-input').value;
+  if(!pw){stat('請輸入密碼','ok');return;}
+  if(!input.trim()){stat('請輸入文字','ok');return;}
+
+  const outputField=document.getElementById('output-field');
+  const outputTA=document.getElementById('unified-output');
+  const outputLbl=document.getElementById('output-lbl');
+
+  if(textIsDecMode){
+    // 解密
+    if(isLocked()){showLock();return;}
+    const ciph=input.replace(/\s+/g,'').trim();
+    if(ciph.length<80){outputTA.value='密文太短';outputTA.style.color=var_red();outputField.style.display='';return;}
+    try{
+      const salt=new Uint8Array(h2b(ciph.slice(0,32)));
+      const iv=new Uint8Array(h2b(ciph.slice(32,56)));
+      const ct=h2b(ciph.slice(56));
+      const key=await deriveKey(pw,salt);
+      const pl=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
+      outputTA.style.color='';
+      outputTA.value=new TextDecoder().decode(pl);
+      outputLbl.textContent='解密結果';
+      outputField.style.display='';
+      updateCipherMask('unified-output','cout-mask',true);
+      failCount=0;
+      stat('解密完成','ok');
+      startClearCountdown();
+    }catch(e){
+      console.error(e);
+      recordFail();
+      outputTA.value='解密失敗 — 密碼錯誤、格式無效或資料已損毀';
+      outputTA.style.color=var_red();
+      outputField.style.display='';
+    }
+  } else {
+    // 加密
+    try{
+      const salt=crypto.getRandomValues(new Uint8Array(16));
+      const iv=crypto.getRandomValues(new Uint8Array(12));
+      const key=await deriveKey(pw,salt);
+      const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(input));
+      const cipherHex=b2h(salt.buffer)+b2h(iv.buffer)+b2h(ct);
+      outputTA.style.color='';
+      outputTA.value=cipherHex;
+      outputLbl.textContent='加密結果（密文）';
+      outputField.style.display='';
+      updateCipherMask('unified-output','cout-mask',true);
+      stat('加密完成','ok');
+      startClearCountdown();
+    }catch(e){stat('加密失敗','ok');}
+  }
+}
+
+function clearUnified(){
+  document.getElementById('pw-unified').value='';
+  document.getElementById('unified-input').value='';
+  document.getElementById('unified-output').value='';
+  document.getElementById('output-field').style.display='none';
+  document.getElementById('cout-mask').textContent='';
+  updateStrength('','sbar','slbl');
+  textIsDecMode=false;
+  detectMode('');
+  if(_clearTimer){clearTimeout(_clearTimer);_clearTimer=null;}
+  document.getElementById('sb').innerHTML='';
+}
+
+// ── 檔案模式：自動偵測 ──
+function fileSelectedUnified(){
+  const f=document.getElementById('file-unified').files[0];
+  if(!f) return;
+  unifiedFile=f;
+  fileIsEnc=f.name.endsWith('.enc');
+
+  const btn=document.getElementById('file-action-btn');
+  const lbl=document.getElementById('file-input-lbl');
+  const dzLbl=document.getElementById('dz-label-text');
+
+  document.getElementById('fname-unified').textContent=f.name+' ('+fmtSize(f.size)+')';
+
+  if(fileIsEnc){
+    btn.textContent='解密檔案';
+    btn.style.background='var(--green)';
+    lbl.textContent='已選擇加密檔案';
+    setActionHint('dec','解密模式','偵測到 .enc 檔案，輸入密碼後按解密');
+  } else {
+    btn.textContent='加密檔案';
+    btn.style.background='';
+    lbl.textContent='已選擇檔案';
+    setActionHint('enc','加密模式','輸入密碼後按加密');
+  }
+  // 同步舊版變數
+  if(fileIsEnc){ decFile=f; encFile=null; }
+  else { encFile=f; decFile=null; }
+}
+
+function dzDropUnified(e){
+  e.preventDefault();
+  dzOut('dz-unified');
+  const f=e.dataTransfer.files[0];
+  if(!f) return;
+  document.getElementById('file-unified').files; // can't set directly
+  unifiedFile=f;
+  fileIsEnc=f.name.endsWith('.enc');
+  if(fileIsEnc){ decFile=f; encFile=null; }
+  else { encFile=f; decFile=null; }
+  document.getElementById('fname-unified').textContent=f.name+' ('+fmtSize(f.size)+')';
+  const btn=document.getElementById('file-action-btn');
+  const lbl=document.getElementById('file-input-lbl');
+  if(fileIsEnc){
+    btn.textContent='解密檔案';btn.style.background='var(--green)';
+    lbl.textContent='已選擇加密檔案';
+    setActionHint('dec','解密模式','偵測到 .enc 檔案，輸入密碼後按解密');
+  } else {
+    btn.textContent='加密檔案';btn.style.background='';
+    lbl.textContent='已選擇檔案';
+    setActionHint('enc','加密模式','輸入密碼後按加密');
+  }
+}
+
+async function doFileUnified(){
+  const pw=document.getElementById('fpw-unified').value;
+  // 同步密碼到舊版 ID（底層函式讀取用）
+  document.getElementById('fpw-enc').value=pw;
+  document.getElementById('fpw-dec').value=pw;
+  if(fileIsEnc) await doFileDec();
+  else await doFileEnc();
+}
+
+function clearFileUnified(){
+  unifiedFile=null; encFile=null; decFile=null; fileIsEnc=false;
+  document.getElementById('fname-unified').textContent='';
+  document.getElementById('fpw-unified').value='';
+  document.getElementById('fpw-enc').value='';
+  document.getElementById('fpw-dec').value='';
+  document.getElementById('file-unified').value='';
+  ['fenc-result','fdec-result'].forEach(id=>{
+    const e=document.getElementById(id);if(e)e.classList.remove('show');
+  });
+  const ferr=document.getElementById('fdec-err');
+  if(ferr){ferr.classList.remove('show');ferr.textContent='';}
+  updateStrength('','sbar2','slbl2');
+  const btn=document.getElementById('file-action-btn');
+  btn.textContent='加密檔案';btn.style.background='';
+  document.getElementById('file-input-lbl').textContent='選擇檔案';
+  setActionHint('idle','等待選擇','選擇 .enc 檔案會自動切換為解密模式');
+  if(_clearTimer){clearTimeout(_clearTimer);_clearTimer=null;}
+  document.getElementById('sb').innerHTML='';
+}
+
+// 舊版 sw() 保留空殼，避免底層殘留呼叫出錯
+function sw(){}
 
 // ── STATUS / COUNTDOWN ──
 function stat(msg,t){
@@ -571,18 +728,26 @@ function cancelClear(){
 }
 
 function clearAllPanels(){
-  ['pw-enc','pw-dec','cin'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  const pt=document.getElementById('pt');if(pt)pt.value='';
-  const cout=document.getElementById('cout');if(cout)cout.value='';
-  const pout=document.getElementById('pout');if(pout){pout.value='';pout.style.color='';}
+  // 文字模式
+  const uInput=document.getElementById('unified-input');if(uInput)uInput.value='';
+  const uOutput=document.getElementById('unified-output');if(uOutput){uOutput.value='';uOutput.style.color='';}
+  const uPw=document.getElementById('pw-unified');if(uPw)uPw.value='';
+  const oField=document.getElementById('output-field');if(oField)oField.style.display='none';
   updateStrength('','sbar','slbl');
-  ['fpw-enc','fpw-dec'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  encFile=null;decFile=null;
-  ['fname-enc','fname-dec'].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent='';});
-  ['file-enc','file-dec'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  textIsDecMode=false;
+  detectMode('');
+  // 隱藏舊版欄位
+  ['pw-enc','pw-dec','cin','pt','cout','pout'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  // 檔案模式
+  unifiedFile=null;encFile=null;decFile=null;fileIsEnc=false;
+  ['fpw-unified','fpw-enc','fpw-dec'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  const fnU=document.getElementById('fname-unified');if(fnU)fnU.textContent='';
+  const fuInput=document.getElementById('file-unified');if(fuInput)fuInput.value='';
   ['fenc-result','fdec-result'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove('show');});
   const ferr=document.getElementById('fdec-err');if(ferr){ferr.classList.remove('show');ferr.textContent='';}
   updateStrength('','sbar2','slbl2');
+  const fileBtn=document.getElementById('file-action-btn');
+  if(fileBtn){fileBtn.textContent='加密檔案';fileBtn.style.background='';}
 }
 
 function setErr(el,msg){el.value=msg;el.style.color=var_red();}
@@ -817,7 +982,7 @@ function stripExif(arrayBuffer) {
 }
 
 async function doFileEnc(){
-  const pw=document.getElementById('fpw-enc').value;
+  const pw=document.getElementById('fpw-enc').value || document.getElementById('fpw-unified').value;
 
   if(!pw){stat('No password','ok');return;}
   if(!encFile){stat('No file selected','ok');return;}
@@ -915,7 +1080,7 @@ async function doFileEnc(){
 async function doFileDec(){
 
   if(isLocked()){showLock();return;}
-  const pw=document.getElementById('fpw-dec').value;
+  const pw=document.getElementById('fpw-dec').value || document.getElementById('fpw-unified').value;
 
   const errEl=document.getElementById('fdec-err');
 
@@ -1051,46 +1216,22 @@ function fallbackCopy(text){
   try{document.execCommand('copy');stat('Copied','ok');}catch(e){stat('Copy failed — select manually','ok');}
   document.body.removeChild(ta);
 }
-function clearEnc(){
-  document.getElementById('pw-enc').value='';
-  document.getElementById('pt').value='';
-  document.getElementById('cout').value='';
-  updateCipherMask('cout','cout-mask',true);
-  updateStrength('','sbar','slbl');
-}
-function clearDec(){
-  document.getElementById('pw-dec').value='';
-  document.getElementById('cin').value='';
-  updateCipherMask('cin','cin-mask',false);
-  const out=document.getElementById('pout');out.value='';out.style.color='';
-}
+function clearEnc(){ clearUnified(); }
+function clearDec(){ clearUnified(); }
+function clearFileEnc(){ clearFileUnified(); }
+function clearFileDec(){ clearFileUnified(); }
 function updateCipherMask(taId,maskId,isRo){
   const ta=document.getElementById(taId);
   const mask=document.getElementById(maskId);
+  if(!ta||!mask){return;}
   const val=ta.value;
   if(!val){mask.textContent='';return;}
   mask.textContent='*'.repeat(Math.min(val.length,300));
 }
 document.addEventListener('DOMContentLoaded',()=>{
-  const cin=document.getElementById('cin');
-  if(cin) cin.addEventListener('input',()=>updateCipherMask('cin','cin-mask',false));
+  // 初始化 hint
+  setActionHint('idle','等待輸入','貼入密文會自動切換為解密模式');
 });
-function clearFileEnc(){
-  encFile=null;
-  document.getElementById('fname-enc').textContent='';
-  document.getElementById('fpw-enc').value='';
-  document.getElementById('fenc-result').classList.remove('show');
-  document.getElementById('file-enc').value='';
-  updateStrength('','sbar2','slbl2');
-}
-function clearFileDec(){
-  decFile=null;
-  document.getElementById('fname-dec').textContent='';
-  document.getElementById('fpw-dec').value='';
-  document.getElementById('fdec-result').classList.remove('show');
-  const e=document.getElementById('fdec-err');e.classList.remove('show');e.textContent='';
-  document.getElementById('file-dec').value='';
-}
 </script>
 <script>
 if ('serviceWorker' in navigator) {
