@@ -251,14 +251,25 @@
     return output;
   }
 
+  // 只比較前綴、僅限 ASCII 大小寫不敏感；Base64URL 本體仍區分大小寫，不會被改動。
+  function hasPrefixIgnoreCase(value, prefix) {
+    if (typeof value !== 'string' || value.length < prefix.length) return false;
+    for (let i = 0; i < prefix.length; i++) {
+      let code = value.charCodeAt(i);
+      if (code >= 97 && code <= 122) code -= 32;
+      if (code !== prefix.charCodeAt(i)) return false;
+    }
+    return true;
+  }
+
   function looksLikeV3Text(value) {
-    return typeof value === 'string' && value.trim().startsWith(TEXT_PREFIX);
+    return typeof value === 'string' && hasPrefixIgnoreCase(value.trim(), TEXT_PREFIX);
   }
 
   function looksLikeLegacyText(value) {
     if (typeof value !== 'string') return false;
     const trimmed = value.trim();
-    if (trimmed.startsWith('CIPHER2:')) return true;
+    if (hasPrefixIgnoreCase(trimmed, 'CIPHER2:')) return true;
     const compact = value.replace(/\s+/g, '');
     return compact.length >= 80 && /^[0-9a-fA-F]+$/.test(compact);
   }
@@ -290,7 +301,7 @@
   async function decryptText(ciphertext, password) {
     if (typeof ciphertext !== 'string') fail('INVALID_INPUT', 'Ciphertext must be text');
     const trimmed = ciphertext.trim();
-    if (!trimmed.startsWith(TEXT_PREFIX)) {
+    if (!hasPrefixIgnoreCase(trimmed, TEXT_PREFIX)) {
       if (looksLikeLegacyText(trimmed)) fail('LEGACY_FORMAT', 'Legacy PBKDF2 ciphertext is not supported');
       fail('INVALID_PREFIX', 'Not a CIPHER v3 ciphertext');
     }

@@ -1,0 +1,151 @@
+diff --git a/crypto-v3.js b/crypto-v3.js
+index b1aa6fa..1579cdd 100644
+--- a/crypto-v3.js
++++ b/crypto-v3.js
+@@ -251,14 +251,25 @@
+     return output;
+   }
+ 
++  // 只比較前綴、僅限 ASCII 大小寫不敏感；Base64URL 本體仍區分大小寫，不會被改動。
++  function hasPrefixIgnoreCase(value, prefix) {
++    if (typeof value !== 'string' || value.length < prefix.length) return false;
++    for (let i = 0; i < prefix.length; i++) {
++      let code = value.charCodeAt(i);
++      if (code >= 97 && code <= 122) code -= 32;
++      if (code !== prefix.charCodeAt(i)) return false;
++    }
++    return true;
++  }
++
+   function looksLikeV3Text(value) {
+-    return typeof value === 'string' && value.trim().startsWith(TEXT_PREFIX);
++    return typeof value === 'string' && hasPrefixIgnoreCase(value.trim(), TEXT_PREFIX);
+   }
+ 
+   function looksLikeLegacyText(value) {
+     if (typeof value !== 'string') return false;
+     const trimmed = value.trim();
+-    if (trimmed.startsWith('CIPHER2:')) return true;
++    if (hasPrefixIgnoreCase(trimmed, 'CIPHER2:')) return true;
+     const compact = value.replace(/\s+/g, '');
+     return compact.length >= 80 && /^[0-9a-fA-F]+$/.test(compact);
+   }
+@@ -290,7 +301,7 @@
+   async function decryptText(ciphertext, password) {
+     if (typeof ciphertext !== 'string') fail('INVALID_INPUT', 'Ciphertext must be text');
+     const trimmed = ciphertext.trim();
+-    if (!trimmed.startsWith(TEXT_PREFIX)) {
++    if (!hasPrefixIgnoreCase(trimmed, TEXT_PREFIX)) {
+       if (looksLikeLegacyText(trimmed)) fail('LEGACY_FORMAT', 'Legacy PBKDF2 ciphertext is not supported');
+       fail('INVALID_PREFIX', 'Not a CIPHER v3 ciphertext');
+     }
+diff --git a/crypto-v4.js b/crypto-v4.js
+index 113812f..6cf58fd 100644
+--- a/crypto-v4.js
++++ b/crypto-v4.js
+@@ -256,14 +256,25 @@
+     return output;
+   }
+ 
++  // 只比較前綴、僅限 ASCII 大小寫不敏感；Base64URL 本體仍區分大小寫，不會被改動。
++  function hasPrefixIgnoreCase(value, prefix) {
++    if (typeof value !== 'string' || value.length < prefix.length) return false;
++    for (let i = 0; i < prefix.length; i++) {
++      let code = value.charCodeAt(i);
++      if (code >= 97 && code <= 122) code -= 32;
++      if (code !== prefix.charCodeAt(i)) return false;
++    }
++    return true;
++  }
++
+   function looksLikeV4Text(value) {
+-    return typeof value === 'string' && value.trim().startsWith(TEXT_PREFIX);
++    return typeof value === 'string' && hasPrefixIgnoreCase(value.trim(), TEXT_PREFIX);
+   }
+ 
+   function looksLikeLegacyText(value) {
+     if (typeof value !== 'string') return false;
+     const trimmed = value.trim();
+-    if (trimmed.startsWith('CIPHER2:') || trimmed.startsWith('CIPHER3:')) return true;
++    if (hasPrefixIgnoreCase(trimmed, 'CIPHER2:') || hasPrefixIgnoreCase(trimmed, 'CIPHER3:')) return true;
+     const compact = value.replace(/\s+/g, '');
+     return compact.length >= 80 && /^[0-9a-fA-F]+$/.test(compact);
+   }
+@@ -295,7 +306,7 @@
+   async function decryptText(ciphertext, password) {
+     if (typeof ciphertext !== 'string') fail('INVALID_INPUT', 'Ciphertext must be text');
+     const trimmed = ciphertext.trim();
+-    if (!trimmed.startsWith(TEXT_PREFIX)) {
++    if (!hasPrefixIgnoreCase(trimmed, TEXT_PREFIX)) {
+       if (looksLikeLegacyText(trimmed)) fail('LEGACY_FORMAT', 'Older CIPHER ciphertext requires the compatibility decryptor');
+       fail('INVALID_PREFIX', 'Not a CIPHER v4 ciphertext');
+     }
+diff --git a/index.html b/index.html
+index 4fb3472..c7f3d21 100644
+--- a/index.html
++++ b/index.html
+@@ -302,7 +302,7 @@
+       <div class="field">
+         <div class="lbl" id="input-lbl">輸入文字</div>
+         <div class="pt-field">
+-          <textarea id="unified-input" placeholder="" oninput="detectMode(this.value)"></textarea>
++          <textarea id="unified-input" placeholder="" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" oninput="detectMode(this.value)"></textarea>
+           <div class="cipher-mask" id="cin-mask" style="display:none"></div>
+         </div>
+       </div>
+diff --git a/sw.js b/sw.js
+index 3050e2b..3c515d3 100644
+--- a/sw.js
++++ b/sw.js
+@@ -1,4 +1,4 @@
+-const CACHE_NAME = 'cipher-v6';
++const CACHE_NAME = 'cipher-v7';
+ 
+ const APP_SHELL = [
+   './',
+diff --git a/tests/crypto-v3.test.mjs b/tests/crypto-v3.test.mjs
+index 8bb5266..a3a6bfa 100644
+--- a/tests/crypto-v3.test.mjs
++++ b/tests/crypto-v3.test.mjs
+@@ -190,6 +190,16 @@ async function run() {
+   const v2File = new Uint8Array([0x43, 0x49, 0x50, 0x48, 0x02, 0, 0, 0]);
+   await expectCode(() => C.decryptFile(v2File, password), 'LEGACY_FORMAT');
+ 
++  // 前綴大小寫不敏感，本體仍區分大小寫。
++  const caseV3 = await C.encryptText('大小寫測試', password);
++  const bodyV3 = caseV3.slice('CIPHER3:'.length);
++  for (const prefix of ['cipher3:', 'Cipher3:']) {
++    assert.equal(C.looksLikeV3Text(' ' + prefix + bodyV3), true);
++    assert.equal(await C.decryptText(prefix + bodyV3, password), '大小寫測試');
++  }
++  assert.equal(C.looksLikeV3Text('cipher4:' + bodyV3), false);
++  assert.equal(C.looksLikeLegacyText('cipher2:abc'), true);
++
+   console.log('CIPHER v3 tests passed');
+ }
+ 
+diff --git a/tests/crypto-v4.test.mjs b/tests/crypto-v4.test.mjs
+index 087c361..bd00034 100644
+--- a/tests/crypto-v4.test.mjs
++++ b/tests/crypto-v4.test.mjs
+@@ -98,6 +98,20 @@ async function run() {
+   assert.equal(V4.isLegacyFile(oldFile), true);
+   assert.deepEqual(new Uint8Array((await V3.decryptFile(oldFile, oldPassword)).buffer), fileBytes);
+ 
++  // 前綴大小寫不敏感（手機備忘錄／鍵盤可能改動開頭），本體仍區分大小寫。
++  const caseText = await V4.encryptText('大小寫測試', phrase);
++  const body = caseText.slice('CIPHER4:'.length);
++  for (const prefix of ['cipher4:', 'Cipher4:', 'cIpHeR4:']) {
++    const variant = '  ' + prefix + body + '\n';
++    assert.equal(V4.looksLikeV4Text(variant), true);
++    assert.equal(await V4.decryptText(variant, phrase), '大小寫測試');
++  }
++  assert.equal(V4.looksLikeV4Text('ciphe4:' + body), false);
++  assert.equal(V4.looksLikeV4Text('CIPHER3:' + body), false);
++  await assert.rejects(() => V4.decryptText('cipher4:' + body.toLowerCase(), phrase), error => error && error.name === 'CipherV4Error');
++  assert.equal(V4.looksLikeLegacyText('cipher2:abc'), true);
++  assert.equal(V4.looksLikeLegacyText('Cipher3:abc'), true);
++
+   console.log('CIPHER v4 recovery phrase tests passed');
+ }
+ 
