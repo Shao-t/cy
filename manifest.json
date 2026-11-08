@@ -1,7 +1,7 @@
 {
   "name": "CIPHER",
   "short_name": "CIPHER",
-  "description": "本地 AES-GCM 檔案與文字加密工具",
+  "description": "本地 8＋1 復原詞 + Argon2id + AES-256-GCM 檔案與文字加密工具",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f5f5f7",

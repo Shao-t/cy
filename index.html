@@ -135,6 +135,13 @@
   .pt-field{position:relative;}
   .pt-field textarea{min-height:44px;}
   .pt-hint{display:none;}
+  textarea#unified-input.masked-cipher-input{
+    color:transparent;caret-color:var(--text);
+  }
+  .pt-field:focus-within .cipher-mask{
+    border-color:var(--blue);
+    box-shadow:0 0 0 3px rgba(0,102,204,.12);
+  }
 
   textarea.ro{
     background:var(--surface2);cursor:default;
@@ -166,6 +173,13 @@
   .strength-bar{flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden;}
   .strength-fill{height:100%;width:0%;transition:width .3s,background .3s;border-radius:2px;}
   .strength-label{font-size:11px;color:var(--text3);min-width:46px;text-align:right;font-weight:500;}
+
+  /* RECOVERY PHRASE */
+  .recovery-tools{margin-top:9px;padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2);}
+  .recovery-actions{display:flex;gap:6px;flex-wrap:wrap;}
+  .recovery-note{font-size:11px;color:var(--text3);line-height:1.55;margin-top:8px;}
+  .recovery-check{display:flex;align-items:flex-start;gap:8px;margin-top:9px;font-size:11px;color:var(--text2);line-height:1.45;cursor:pointer;}
+  .recovery-check input{margin-top:2px;accent-color:var(--blue);}
 
   /* DROPZONE */
   .dropzone{
@@ -268,17 +282,28 @@
     <!-- TEXT MODE -->
     <div id="mode-text">
       <div class="field">
-        <div class="lbl">密碼</div>
-        <input class="ipt" type="password" id="pw-unified" placeholder="" oninput="updateStrength(this.value,'sbar','slbl')">
+        <div class="lbl" id="pw-label-text">英文復原詞</div>
+        <input class="ipt" type="password" id="pw-unified" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="8 個英文隨機詞＋1 個校驗詞" oninput="updateStrength(this.value,'sbar','slbl')">
         <div class="strength-wrap">
           <div class="strength-bar"><div class="strength-fill" id="sbar"></div></div>
           <div class="strength-label" id="slbl">—</div>
+        </div>
+        <div class="recovery-tools" id="recovery-tools-text">
+          <div class="recovery-actions">
+            <button class="btn-copy" type="button" onclick="generateRecovery('pw-unified','confirm-recovery-text')">產生 8＋1 復原詞</button>
+            <button class="btn-copy" id="toggle-recovery-text" type="button" onclick="toggleSecret('pw-unified',this)">顯示</button>
+            <button class="btn-copy" type="button" onclick="copyRecovery('pw-unified')">複製</button>
+            <button class="btn-copy" type="button" onclick="downloadRecovery('pw-unified')">下載復原卡</button>
+          </div>
+          <div class="recovery-note">使用 BIP-39 英文 2,048 詞庫產生 88-bit 隨機強度；請與密文分開保存。</div>
+          <label class="recovery-check"><input type="checkbox" id="confirm-recovery-text"> <span>我已另外保存復原詞，並了解遺失後無法復原。</span></label>
         </div>
       </div>
       <div class="field">
         <div class="lbl" id="input-lbl">輸入文字</div>
         <div class="pt-field">
           <textarea id="unified-input" placeholder="" oninput="detectMode(this.value)"></textarea>
+          <div class="cipher-mask" id="cin-mask" style="display:none"></div>
         </div>
       </div>
       <div class="brow">
@@ -307,11 +332,21 @@
     <!-- FILE MODE -->
     <div id="mode-file" style="display:none">
       <div class="field">
-        <div class="lbl">密碼</div>
-        <input class="ipt" type="password" id="fpw-unified" placeholder="" oninput="updateStrength(this.value,'sbar2','slbl2')">
+        <div class="lbl" id="pw-label-file">英文復原詞</div>
+        <input class="ipt" type="password" id="fpw-unified" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="8 個英文隨機詞＋1 個校驗詞" oninput="updateStrength(this.value,'sbar2','slbl2')">
         <div class="strength-wrap">
           <div class="strength-bar"><div class="strength-fill" id="sbar2"></div></div>
           <div class="strength-label" id="slbl2">—</div>
+        </div>
+        <div class="recovery-tools" id="recovery-tools-file">
+          <div class="recovery-actions">
+            <button class="btn-copy" type="button" onclick="generateRecovery('fpw-unified','confirm-recovery-file')">產生 8＋1 復原詞</button>
+            <button class="btn-copy" id="toggle-recovery-file" type="button" onclick="toggleSecret('fpw-unified',this)">顯示</button>
+            <button class="btn-copy" type="button" onclick="copyRecovery('fpw-unified')">複製</button>
+            <button class="btn-copy" type="button" onclick="downloadRecovery('fpw-unified')">下載復原卡</button>
+          </div>
+          <div class="recovery-note">使用 BIP-39 英文 2,048 詞庫產生 88-bit 隨機強度；請與 .enc 檔案分開保存。</div>
+          <label class="recovery-check"><input type="checkbox" id="confirm-recovery-file"> <span>我已另外保存復原詞，並了解遺失後無法復原。</span></label>
         </div>
       </div>
       <div class="field">
@@ -347,6 +382,11 @@
   </div>
 </div>
 
+<script src="vendor/argon2.umd.min.js"></script>
+<script src="vendor/bip39-en.js"></script>
+<script src="recovery-phrase.js"></script>
+<script src="crypto-v3.js"></script>
+<script src="crypto-v4.js"></script>
 <script>
 // ── PIXEL APPLE-STYLE LAPTOP ──
 (function(){
@@ -403,6 +443,7 @@
 
 // ── STATE ──
 let currentMode='text', unifiedFile=null, fileIsEnc=false, _clearTimer=null;
+let cryptoReady=false, textIsLegacyMode=false, textCipherVersion=0, fileCipherVersion=0;
 // 保留舊名稱供底層函式使用
 let encFile=null, decFile=null;
 
@@ -444,49 +485,74 @@ function updateLockTimer(){
   document.getElementById('lock-timer').textContent=`${m}:${s}`;
 }
 
-// ── HELPERS ──
-function b2h(buf){return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');}
-function h2b(hex){
-  hex = hex.replace(/\s+/g,'');
-  if(hex.length%2)throw new Error('INVALID HEX');
-  if(!/^[0-9a-fA-F]+$/.test(hex)) throw new Error('INVALID HEX');
-  const a=new Uint8Array(hex.length/2);
-  for(let i=0;i<hex.length;i+=2){
-    const v=parseInt(hex.slice(i,i+2),16);
-    if(Number.isNaN(v)) throw new Error('INVALID HEX');
-    a[i/2]=v;
-  }
-  return a.buffer;
-}
-function concatBufs(...bufs){
-  const total=bufs.reduce((s,b)=>s+b.byteLength,0);
-  const out=new Uint8Array(total);let off=0;
-  bufs.forEach(b=>{out.set(new Uint8Array(b),off);off+=b.byteLength;});
-  return out.buffer;
-}
-
-// ── PBKDF2 ──
-async function deriveKey(password,saltBuf){
-  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),{name:'PBKDF2'},false,['deriveKey']);
-  return crypto.subtle.deriveKey(
-    {name:'PBKDF2',salt:saltBuf,iterations:210000,hash:'SHA-256'},
-    base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']
-  );
-}
-
 // ── STRENGTH ──
-function updateStrength(pw,barId,lblId){
+async function updateStrength(pw,barId,lblId){
   const bar=document.getElementById(barId),lbl=document.getElementById(lblId);
-  let s=0;
-  if(pw.length>=8)s++;if(pw.length>=16)s++;
-  if(/[0-9]/.test(pw)&&/[a-zA-Z]/.test(pw))s++;
-  if(/[^a-zA-Z0-9]/.test(pw)||pw.length>=24)s++;
-  const L=[
-    {w:'0%',c:'var(--border)',t:'—'},{w:'25%',c:'var(--red)',t:'Weak'},
-    {w:'50%',c:'var(--orange)',t:'Fair'},{w:'75%',c:'#a0c040',t:'Good'},
-    {w:'100%',c:'var(--green)',t:'Strong'}
-  ];
-  bar.style.width=L[s].w;bar.style.background=L[s].c;lbl.textContent=L[s].t;
+  const legacyUnlock=(barId==='sbar'&&textCipherVersion===3)||(barId==='sbar2'&&fileCipherVersion===3);
+  if(legacyUnlock){bar.style.width='100%';bar.style.background='var(--border)';lbl.textContent='舊版密碼';return;}
+  if(!pw){bar.style.width='0%';bar.style.background='var(--border)';lbl.textContent='—';return;}
+  if(!window.CipherRecoveryPhrase){bar.style.width='25%';bar.style.background='var(--red)';lbl.textContent='無法驗證';return;}
+  const snapshot=pw;
+  const result=await CipherRecoveryPhrase.inspect(pw);
+  const inputId=barId==='sbar'?'pw-unified':'fpw-unified';
+  if(document.getElementById(inputId).value!==snapshot)return;
+  bar.style.width=result.valid?'100%':'25%';
+  bar.style.background=result.valid?'var(--green)':'var(--red)';
+  lbl.textContent=result.valid?'88-bit':'需 8＋1 詞';
+}
+
+async function generateRecovery(inputId,confirmId){
+  if(!cryptoReady){stat('安全隨機模組尚未就緒','ok');return;}
+  try{
+    const phrase=await CipherRecoveryPhrase.generate();
+    const input=document.getElementById(inputId);
+    input.value=phrase;
+    input.type='text';
+    document.getElementById(inputId==='pw-unified'?'toggle-recovery-text':'toggle-recovery-file').textContent='隱藏';
+    document.getElementById(confirmId).checked=false;
+    await updateStrength(phrase,inputId==='pw-unified'?'sbar':'sbar2',inputId==='pw-unified'?'slbl':'slbl2');
+    stat('已產生 8＋1 復原詞；請先複製或下載復原卡','ok');
+  }catch(e){console.error(e);stat('復原詞產生失敗','ok');}
+}
+
+function toggleSecret(inputId,button){
+  const input=document.getElementById(inputId);
+  input.type=input.type==='password'?'text':'password';
+  button.textContent=input.type==='password'?'顯示':'隱藏';
+}
+
+function copyRecovery(inputId){
+  const phrase=CipherRecoveryPhrase.normalizePhrase(document.getElementById(inputId).value);
+  if(!phrase){stat('沒有可複製的復原詞','ok');return;}
+  if(navigator.clipboard&&window.isSecureContext){
+    navigator.clipboard.writeText(phrase).then(()=>stat('復原詞已複製；請注意剪貼簿安全','ok')).catch(()=>fallbackCopy(phrase));
+  }else fallbackCopy(phrase);
+}
+
+async function downloadRecovery(inputId){
+  const phrase=document.getElementById(inputId).value;
+  const result=await CipherRecoveryPhrase.inspect(phrase);
+  if(!result.valid){stat(result.message,'ok');return;}
+  const content='CIPHER v4 復原卡\n\n'+result.normalized+'\n\n詞庫：BIP-39 English (2,048 words)\n保護等級：88-bit（8 個隨機詞＋1 個校驗詞）\n請與密文分開保存；遺失後無法復原。\n';
+  await downloadBuf(new TextEncoder().encode(content),'CIPHER-v4-復原卡.txt','text/plain;charset=utf-8');
+}
+
+async function requireRecovery(inputId,confirmId){
+  const result=await CipherRecoveryPhrase.inspect(document.getElementById(inputId).value);
+  if(!result.valid){stat(result.message,'ok');return null;}
+  if(!document.getElementById(confirmId).checked){stat('請先確認已另外保存復原詞','ok');return null;}
+  document.getElementById(inputId).value=result.normalized;
+  return result.normalized;
+}
+
+function setRecoveryUi(kind,isEncryption,legacyV3=false){
+  const isText=kind==='text';
+  const tools=document.getElementById(isText?'recovery-tools-text':'recovery-tools-file');
+  const label=document.getElementById(isText?'pw-label-text':'pw-label-file');
+  const input=document.getElementById(isText?'pw-unified':'fpw-unified');
+  tools.style.display=isEncryption?'':'none';
+  label.textContent=isEncryption?'英文復原詞':(legacyV3?'舊版 CIPHER3 密碼':'8＋1 英文復原詞');
+  input.placeholder=isEncryption?'8 個英文隨機詞＋1 個校驗詞':(legacyV3?'輸入原本的 CIPHER3 密碼':'貼上 8＋1 英文復原詞');
 }
 
 // ── UI MODE ──
@@ -497,7 +563,7 @@ function swMode(m){
   document.getElementById('m-text').className='type-btn'+(m==='text'?' on':'');
   document.getElementById('m-file').className='type-btn'+(m==='file'?' on':'');
   // 重置 hint
-  if(m==='text') setActionHint('idle','等待輸入','貼入密文會自動切換為解密模式');
+    if(m==='text') setActionHint('idle','等待輸入','貼入 CIPHER4: 或 CIPHER3: 密文會自動切換為解密模式');
   else setActionHint('idle','等待選擇','選擇 .enc 檔案會自動切換為解密模式');
 }
 
@@ -510,34 +576,57 @@ function setActionHint(type, badge, desc){
 }
 
 // ── 文字模式自動偵測 ──
-// 密文特徵：純 hex 字串，長度 >= 80
+// 新版密文使用明確前綴；舊 hex 格式只顯示不支援，不得再次加密。
 function looksLikeCiphertext(val){
-  const v=val.replace(/\s+/g,'');
-  return v.length>=80 && /^[0-9a-fA-F]+$/.test(v);
+  return !!((window.CipherV4&&CipherV4.looksLikeV4Text(val))||(window.CipherV3&&CipherV3.looksLikeV3Text(val)));
 }
 
 let textIsDecMode=false;
 function detectMode(val){
   const wasDecMode=textIsDecMode;
   textIsDecMode=looksLikeCiphertext(val);
+  textCipherVersion=window.CipherV4&&CipherV4.looksLikeV4Text(val)?4:(window.CipherV3&&CipherV3.looksLikeV3Text(val)?3:0);
+  textIsLegacyMode=!!(window.CipherV3&&CipherV3.looksLikeLegacyText(val));
 
   const btn=document.getElementById('main-action-btn');
   const inputLbl=document.getElementById('input-lbl');
+  const inputTA=document.getElementById('unified-input');
   const outputField=document.getElementById('output-field');
 
-  if(textIsDecMode){
+  if(textIsLegacyMode){
+    inputTA.classList.add('masked-cipher-input');
+    updateCipherMask('unified-input','cin-mask',false,true);
+    btn.textContent='舊版不支援';
+    btn.style.background='var(--red)';
+    btn.disabled=true;
+    inputLbl.textContent='舊版密文';
+    setRecoveryUi('text',false,false);
+    setActionHint('idle','格式不支援','CIPHER2 與 PBKDF2 舊密文無法在 CIPHER4 解密');
+    document.getElementById('unified-output').value='';
+    outputField.style.display='none';
+  } else if(textIsDecMode){
+    inputTA.classList.add('masked-cipher-input');
+    updateCipherMask('unified-input','cin-mask',false,true);
     btn.textContent='解密';
     btn.style.background='var(--green)';
+    btn.disabled=!cryptoReady;
     inputLbl.textContent='密文';
-    setActionHint('dec','解密模式','偵測到密文格式，輸入密碼後按解密');
+    setRecoveryUi('text',false,textCipherVersion===3);
+    updateStrength(document.getElementById('pw-unified').value,'sbar','slbl');
+    setActionHint('dec','解密模式',textCipherVersion===3?'偵測到 CIPHER3，輸入原本密碼後解密':'偵測到 CIPHER4，貼上 8＋1 復原詞後解密');
     // 有輸出時清除（切換方向）
     if(!wasDecMode){ document.getElementById('unified-output').value=''; outputField.style.display='none'; }
   } else {
+    inputTA.classList.remove('masked-cipher-input');
+    updateCipherMask('unified-input','cin-mask',false,false);
     btn.textContent='加密';
     btn.style.background='';
+    btn.disabled=!cryptoReady;
     inputLbl.textContent='輸入文字';
-    if(val.trim()==='') setActionHint('idle','等待輸入','貼入密文會自動切換為解密模式');
-    else setActionHint('enc','加密模式','輸入密碼後按加密');
+    setRecoveryUi('text',true,false);
+    updateStrength(document.getElementById('pw-unified').value,'sbar','slbl');
+    if(val.trim()==='') setActionHint('idle','等待輸入','產生 8＋1 復原詞後加密；貼入 CIPHER4: 可解密');
+    else setActionHint('enc','加密模式','使用 8＋1 復原詞進行 88-bit 中等保護');
     if(wasDecMode){ document.getElementById('unified-output').value=''; outputField.style.display='none'; }
   }
 }
@@ -546,7 +635,10 @@ function detectMode(val){
 async function doUnified(){
   const pw=document.getElementById('pw-unified').value;
   const input=document.getElementById('unified-input').value;
-  if(!pw){stat('請輸入密碼','ok');return;}
+  const btn=document.getElementById('main-action-btn');
+  if(textIsLegacyMode){stat('CIPHER2 與 PBKDF2 舊密文不受支援','ok');return;}
+  if(!cryptoReady){stat('Argon2id 模組尚未就緒','ok');return;}
+  if(!pw){stat(textCipherVersion===3?'請輸入舊版密碼':'請貼上或產生 8＋1 復原詞','ok');return;}
   if(!input.trim()){stat('請輸入文字','ok');return;}
 
   const outputField=document.getElementById('output-field');
@@ -554,52 +646,62 @@ async function doUnified(){
   const outputLbl=document.getElementById('output-lbl');
 
   if(textIsDecMode){
-    // 解密
     if(isLocked()){showLock();return;}
-    const ciph=input.replace(/\s+/g,'').trim();
-    if(ciph.length<80){outputTA.value='密文太短';outputTA.style.color=var_red();outputField.style.display='';return;}
+    updateCipherMask('unified-output','cout-mask',true,false);
+    btn.disabled=true;
+    btn.textContent='正在衍生金鑰…';
+    stat('正在使用 Argon2id 衍生金鑰','ok');
     try{
-      const salt=new Uint8Array(h2b(ciph.slice(0,32)));
-      const iv=new Uint8Array(h2b(ciph.slice(32,56)));
-      const ct=h2b(ciph.slice(56));
-      const key=await deriveKey(pw,salt);
-      const pl=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
+      const cipher=textCipherVersion===3?CipherV3:CipherV4;
+      const plain=await cipher.decryptText(input,pw);
       outputTA.style.color='';
-      outputTA.value=new TextDecoder().decode(pl);
+      outputTA.value=plain;
       outputLbl.textContent='解密結果';
       outputField.style.display='';
-      updateCipherMask('unified-output','cout-mask',true);
+      updateCipherMask('unified-output','cout-mask',true,false);
       failCount=0;
       stat('解密完成','ok');
       startClearCountdown();
     }catch(e){
       console.error(e);
-      recordFail();
-      outputTA.value='解密失敗 — 密碼錯誤、格式無效或資料已損毀';
+      if(e&&e.code==='AUTH_FAILED') recordFail();
+      outputTA.value=e&&e.code==='LEGACY_FORMAT'
+        ?'CIPHER2 與 PBKDF2 舊密文不受支援'
+        :(e&&['INVALID_WORD_COUNT','UNKNOWN_WORD','CHECKSUM_MISMATCH'].includes(e.code)?e.message:'解密失敗 — 復原詞／密碼錯誤、格式無效或資料已損毀');
       outputTA.style.color=var_red();
       outputField.style.display='';
+    }finally{
+      detectMode(input);
     }
   } else {
-    // 加密
+    const recovery=await requireRecovery('pw-unified','confirm-recovery-text');
+    if(!recovery)return;
+    btn.disabled=true;
+    btn.textContent='正在衍生金鑰…';
+    stat('正在使用 Argon2id 衍生金鑰','ok');
     try{
-      const salt=crypto.getRandomValues(new Uint8Array(16));
-      const iv=crypto.getRandomValues(new Uint8Array(12));
-      const key=await deriveKey(pw,salt);
-      const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(input));
-      const cipherHex=b2h(salt.buffer)+b2h(iv.buffer)+b2h(ct);
+      const ciphertext=await CipherV4.encryptText(input,recovery);
       outputTA.style.color='';
-      outputTA.value=cipherHex;
+      outputTA.value=ciphertext;
       outputLbl.textContent='加密結果（密文）';
       outputField.style.display='';
       updateCipherMask('unified-output','cout-mask',true);
       stat('加密完成','ok');
       startClearCountdown();
-    }catch(e){stat('加密失敗','ok');}
+    }catch(e){
+      console.error(e);
+      stat('加密失敗 — Argon2id 或 Web Crypto 無法使用','ok');
+    }finally{
+      detectMode(input);
+    }
   }
 }
 
 function clearUnified(){
   document.getElementById('pw-unified').value='';
+  document.getElementById('pw-unified').type='password';
+  document.getElementById('toggle-recovery-text').textContent='顯示';
+  document.getElementById('confirm-recovery-text').checked=false;
   document.getElementById('unified-input').value='';
   document.getElementById('unified-output').value='';
   document.getElementById('output-field').style.display='none';
@@ -612,11 +714,24 @@ function clearUnified(){
 }
 
 // ── 檔案模式：自動偵測 ──
-function fileSelectedUnified(){
+async function identifyEncryptedFile(file){
+  fileCipherVersion=0;
+  if(!file||!file.name.toLowerCase().endsWith('.enc')){setRecoveryUi('file',true,false);return;}
+  try{
+    const head=await file.slice(0,8).arrayBuffer();
+    if(CipherV4.isV4File(head))fileCipherVersion=4;
+    else if(CipherV3.isV3File(head))fileCipherVersion=3;
+  }catch(e){console.warn('Unable to inspect encrypted file header',e);}
+  setRecoveryUi('file',false,fileCipherVersion===3);
+  updateStrength(document.getElementById('fpw-unified').value,'sbar2','slbl2');
+}
+
+async function fileSelectedUnified(){
   const f=document.getElementById('file-unified').files[0];
   if(!f) return;
   unifiedFile=f;
-  fileIsEnc=f.name.endsWith('.enc');
+  fileIsEnc=f.name.toLowerCase().endsWith('.enc');
+  await identifyEncryptedFile(f);
 
   const btn=document.getElementById('file-action-btn');
   const lbl=document.getElementById('file-input-lbl');
@@ -628,26 +743,27 @@ function fileSelectedUnified(){
     btn.textContent='解密檔案';
     btn.style.background='var(--green)';
     lbl.textContent='已選擇加密檔案';
-    setActionHint('dec','解密模式','偵測到 .enc 檔案，輸入密碼後按解密');
+    setActionHint('dec','解密模式',fileCipherVersion===3?'偵測到 CIPHER3，輸入原本密碼':'偵測到加密檔，貼上 8＋1 復原詞');
   } else {
     btn.textContent='加密檔案';
     btn.style.background='';
     lbl.textContent='已選擇檔案';
-    setActionHint('enc','加密模式','輸入密碼後按加密');
+    setActionHint('enc','加密模式','產生並保存 8＋1 復原詞後加密');
   }
   // 同步舊版變數
   if(fileIsEnc){ decFile=f; encFile=null; }
   else { encFile=f; decFile=null; }
 }
 
-function dzDropUnified(e){
+async function dzDropUnified(e){
   e.preventDefault();
   dzOut('dz-unified');
   const f=e.dataTransfer.files[0];
   if(!f) return;
   document.getElementById('file-unified').files; // can't set directly
   unifiedFile=f;
-  fileIsEnc=f.name.endsWith('.enc');
+  fileIsEnc=f.name.toLowerCase().endsWith('.enc');
+  await identifyEncryptedFile(f);
   if(fileIsEnc){ decFile=f; encFile=null; }
   else { encFile=f; decFile=null; }
   document.getElementById('fname-unified').textContent=f.name+' ('+fmtSize(f.size)+')';
@@ -656,27 +772,26 @@ function dzDropUnified(e){
   if(fileIsEnc){
     btn.textContent='解密檔案';btn.style.background='var(--green)';
     lbl.textContent='已選擇加密檔案';
-    setActionHint('dec','解密模式','偵測到 .enc 檔案，輸入密碼後按解密');
+    setActionHint('dec','解密模式',fileCipherVersion===3?'偵測到 CIPHER3，輸入原本密碼':'偵測到加密檔，貼上 8＋1 復原詞');
   } else {
     btn.textContent='加密檔案';btn.style.background='';
     lbl.textContent='已選擇檔案';
-    setActionHint('enc','加密模式','輸入密碼後按加密');
+    setActionHint('enc','加密模式','產生並保存 8＋1 復原詞後加密');
   }
 }
 
 async function doFileUnified(){
-  const pw=document.getElementById('fpw-unified').value;
-  // 同步密碼到舊版 ID（底層函式讀取用）
-  document.getElementById('fpw-enc').value=pw;
-  document.getElementById('fpw-dec').value=pw;
   if(fileIsEnc) await doFileDec();
   else await doFileEnc();
 }
 
 function clearFileUnified(){
-  unifiedFile=null; encFile=null; decFile=null; fileIsEnc=false;
+  unifiedFile=null; encFile=null; decFile=null; fileIsEnc=false;fileCipherVersion=0;
   document.getElementById('fname-unified').textContent='';
   document.getElementById('fpw-unified').value='';
+  document.getElementById('fpw-unified').type='password';
+  document.getElementById('toggle-recovery-file').textContent='顯示';
+  document.getElementById('confirm-recovery-file').checked=false;
   document.getElementById('fpw-enc').value='';
   document.getElementById('fpw-dec').value='';
   document.getElementById('file-unified').value='';
@@ -689,6 +804,7 @@ function clearFileUnified(){
   const btn=document.getElementById('file-action-btn');
   btn.textContent='加密檔案';btn.style.background='';
   document.getElementById('file-input-lbl').textContent='選擇檔案';
+  setRecoveryUi('file',true,false);
   setActionHint('idle','等待選擇','選擇 .enc 檔案會自動切換為解密模式');
   if(_clearTimer){clearTimeout(_clearTimer);_clearTimer=null;}
   document.getElementById('sb').innerHTML='';
@@ -731,7 +847,9 @@ function clearAllPanels(){
   // 文字模式
   const uInput=document.getElementById('unified-input');if(uInput)uInput.value='';
   const uOutput=document.getElementById('unified-output');if(uOutput){uOutput.value='';uOutput.style.color='';}
-  const uPw=document.getElementById('pw-unified');if(uPw)uPw.value='';
+  const uPw=document.getElementById('pw-unified');if(uPw){uPw.value='';uPw.type='password';}
+  const textToggle=document.getElementById('toggle-recovery-text');if(textToggle)textToggle.textContent='顯示';
+  const textConfirm=document.getElementById('confirm-recovery-text');if(textConfirm)textConfirm.checked=false;
   const oField=document.getElementById('output-field');if(oField)oField.style.display='none';
   updateStrength('','sbar','slbl');
   textIsDecMode=false;
@@ -739,8 +857,11 @@ function clearAllPanels(){
   // 隱藏舊版欄位
   ['pw-enc','pw-dec','cin','pt','cout','pout'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   // 檔案模式
-  unifiedFile=null;encFile=null;decFile=null;fileIsEnc=false;
+  unifiedFile=null;encFile=null;decFile=null;fileIsEnc=false;fileCipherVersion=0;
   ['fpw-unified','fpw-enc','fpw-dec'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  const filePw=document.getElementById('fpw-unified');if(filePw)filePw.type='password';
+  const fileToggle=document.getElementById('toggle-recovery-file');if(fileToggle)fileToggle.textContent='顯示';
+  const fileConfirm=document.getElementById('confirm-recovery-file');if(fileConfirm)fileConfirm.checked=false;
   const fnU=document.getElementById('fname-unified');if(fnU)fnU.textContent='';
   const fuInput=document.getElementById('file-unified');if(fuInput)fuInput.value='';
   ['fenc-result','fdec-result'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove('show');});
@@ -748,6 +869,7 @@ function clearAllPanels(){
   updateStrength('','sbar2','slbl2');
   const fileBtn=document.getElementById('file-action-btn');
   if(fileBtn){fileBtn.textContent='加密檔案';fileBtn.style.background='';}
+  setRecoveryUi('file',true,false);
 }
 
 function setErr(el,msg){el.value=msg;el.style.color=var_red();}
@@ -758,91 +880,6 @@ function setProgBar(pct){
   const w=document.getElementById('prog'),f=document.getElementById('prog-fill');
   if(pct===null){w.classList.remove('show');f.style.width='0%';return;}
   w.classList.add('show');f.style.width=pct+'%';
-}
-
-// ── TEXT ENCRYPT ──
-async function doEnc(){
-  const pw=document.getElementById('pw-enc').value;
-  const plain=document.getElementById('pt').value;
-  if(!pw){stat('No password','ok');return;}
-  if(!plain){stat('No plaintext','ok');return;}
-  try{
-    const salt=crypto.getRandomValues(new Uint8Array(16));
-    const iv=crypto.getRandomValues(new Uint8Array(12));
-    const key=await deriveKey(pw,salt);
-    const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(plain));
-    const cipherHex=b2h(salt.buffer)+b2h(iv.buffer)+b2h(ct);
-    document.getElementById('cout').value=cipherHex;
-    updateCipherMask('cout','cout-mask',true);
-    stat('Encryption complete','ok');
-    startClearCountdown();
-  }catch(e){stat('Encryption failed','ok');}
-}
-
-// ── TEXT DECRYPT ──
-async function doDec(){
-  if(isLocked()){showLock();return;}
-  const pw=document.getElementById('pw-dec').value;
-  const ciph=document.getElementById('cin').value.replace(/\s+/g,'').trim();
-  const out=document.getElementById('pout');
-  out.value='';out.style.color='';
-  if(!pw||!ciph){out.value='Missing password or ciphertext';out.style.color=var_red();return;}
-  if(ciph.length<80){out.value='Ciphertext too short';out.style.color=var_red();return;}
-  try{
-    const salt=new Uint8Array(h2b(ciph.slice(0,32)));
-    const iv=new Uint8Array(h2b(ciph.slice(32,56)));
-    const ct=h2b(ciph.slice(56));
-    const key=await deriveKey(pw,salt);
-    const pl=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
-    out.style.color='';
-    out.value=new TextDecoder().decode(pl);
-    failCount=0;
-    stat('Decryption complete','ok');
-    startClearCountdown();
-  }catch(e){
-    console.error(e);
-    recordFail();
-    out.value='Decryption failed — wrong password, invalid hex, or tampered data';
-    out.style.color=var_red();
-  }
-}
-
-
-// ── STREAMING CONFIG ──
-const CHUNK_SIZE = 8 * 1024 * 1024;
-
-async function deriveBits(password,saltBuf){
-  const base=await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(password),
-    {name:'PBKDF2'},
-    false,
-    ['deriveBits']
-  );
-
-  return crypto.subtle.deriveBits(
-    {name:'PBKDF2',salt:saltBuf,iterations:210000,hash:'SHA-256'},
-    base,
-    256
-  );
-}
-
-async function importAesKey(rawKey){
-  return crypto.subtle.importKey(
-    'raw',
-    rawKey,
-    {name:'AES-GCM'},
-    false,
-    ['encrypt','decrypt']
-  );
-}
-
-function u32(n){
-  return new Uint32Array([n]).buffer;
-}
-
-function readU32(arr){
-  return new Uint32Array(arr.buffer.slice(arr.byteOffset, arr.byteOffset + 4))[0];
 }
 
 // ── FILE HELPERS ──
@@ -915,8 +952,6 @@ async function downloadBuf(buf,filename,mimeType){
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
 
-const MAGIC=new Uint8Array([0xAE,0x53,0x47,0x01]);
-
 // ── EXIF STRIP ──
 // 只處理 JPEG（SOI = FF D8）。
 // JPEG 由數個 segment 組成，每段格式為：marker(2) + length(2) + data
@@ -982,76 +1017,37 @@ function stripExif(arrayBuffer) {
 }
 
 async function doFileEnc(){
-  const pw=document.getElementById('fpw-enc').value || document.getElementById('fpw-unified').value;
+  const pw=document.getElementById('fpw-unified').value;
+  const btn=document.getElementById('file-action-btn');
 
-  if(!pw){stat('No password','ok');return;}
-  if(!encFile){stat('No file selected','ok');return;}
+  if(!cryptoReady){stat('Argon2id 模組尚未就緒','ok');return;}
+  if(!pw){stat('請產生 8＋1 復原詞','ok');return;}
+  if(!encFile){stat('請選擇檔案','ok');return;}
+  const recovery=await requireRecovery('fpw-unified','confirm-recovery-file');
+  if(!recovery)return;
 
   try{
     setProgBar(5);
-
-    const salt=crypto.getRandomValues(new Uint8Array(16));
-    const rawKey=await deriveBits(pw,salt);
-    const aesKey=await importAesKey(rawKey);
-
-    const nameBytes=new TextEncoder().encode(encFile.name);
-
-    const parts=[];
-
-    parts.push(MAGIC.buffer);
-
-    const nameLenBuf=new Uint16Array([nameBytes.length]);
-    parts.push(nameLenBuf.buffer);
-
-    parts.push(nameBytes.buffer);
-
-    parts.push(salt.buffer);
+    btn.disabled=true;
+    btn.textContent='正在衍生金鑰…';
+    stat('正在使用 Argon2id 衍生金鑰','ok');
 
     // 判斷是否為 JPEG，是的話先讀整個檔案 strip EXIF，再分 chunk 加密
     const isJpeg = /\.(jpe?g)$/i.test(encFile.name) ||
                    encFile.type === 'image/jpeg';
-    let strippedBuf = null;
+    let sourceBlob = encFile;
 
     if (isJpeg) {
-      stat('Removing EXIF metadata…', 'ok');
+      stat('正在移除 EXIF metadata','ok');
       const raw = await encFile.arrayBuffer();
-      strippedBuf = stripExif(raw);
+      sourceBlob = new Blob([stripExif(raw)],{type:encFile.type||'image/jpeg'});
     }
 
-    const sourceSize = strippedBuf ? strippedBuf.byteLength : encFile.size;
-    const totalChunks = Math.ceil(sourceSize / CHUNK_SIZE);
-
-    parts.push(u32(totalChunks));
-
-    for(let i=0;i<totalChunks;i++){
-
-      const start=i*CHUNK_SIZE;
-
-      // JPEG 用 strip 後的 buffer 切 chunk；其他格式直接從 File 讀
-      let chunk;
-      if (strippedBuf) {
-        chunk = strippedBuf.slice(start, Math.min(start + CHUNK_SIZE, strippedBuf.byteLength));
-      } else {
-        chunk = await encFile.slice(start, Math.min(start + CHUNK_SIZE, encFile.size)).arrayBuffer();
-      }
-
-      const iv=crypto.getRandomValues(new Uint8Array(12));
-
-      const encrypted=await crypto.subtle.encrypt(
-        {name:'AES-GCM',iv},
-        aesKey,
-        chunk
-      );
-
-      parts.push(iv.buffer);
-      parts.push(u32(encrypted.byteLength));
-      parts.push(encrypted);
-
-      const pct=Math.floor(((i+1)/totalChunks)*90);
-      setProgBar(Math.max(10,pct));
-    }
-
-    const finalBuf=concatBufs(...parts);
+    const finalBuf=await CipherV4.encryptFile(sourceBlob,recovery,{
+      name:encFile.name,
+      type:encFile.type||'application/octet-stream',
+      onProgress:ratio=>setProgBar(Math.max(10,Math.floor(ratio*90)))
+    });
 
     await downloadBuf(
       finalBuf,
@@ -1065,13 +1061,16 @@ async function doFileEnc(){
     document.getElementById('fenc-name').textContent=encFile.name+'.enc';
     document.getElementById('fenc-result').classList.add('show');
 
-    stat('Encryption complete','ok');
+    stat('檔案加密完成','ok');
     startClearCountdown();
 
   }catch(e){
     console.error(e);
     setProgBar(null);
-    stat('Encryption failed','ok');
+    stat('檔案加密失敗','ok');
+  }finally{
+    btn.disabled=!cryptoReady;
+    btn.textContent='加密檔案';
   }
 }
 
@@ -1080,7 +1079,8 @@ async function doFileEnc(){
 async function doFileDec(){
 
   if(isLocked()){showLock();return;}
-  const pw=document.getElementById('fpw-dec').value || document.getElementById('fpw-unified').value;
+  const pw=document.getElementById('fpw-unified').value;
+  const btn=document.getElementById('file-action-btn');
 
   const errEl=document.getElementById('fdec-err');
 
@@ -1089,94 +1089,41 @@ async function doFileDec(){
 
   document.getElementById('fdec-result').classList.remove('show');
 
-  if(!pw){showFileErr('No password');return;}
-  if(!decFile){showFileErr('No file selected');return;}
+  if(!cryptoReady){showFileErr('Argon2id 模組尚未就緒');return;}
+  if(!pw){showFileErr(fileCipherVersion===3?'請輸入舊版密碼':'請貼上 8＋1 復原詞');return;}
+  if(!decFile){showFileErr('請選擇檔案');return;}
 
   try{
-
     setProgBar(5);
-
-    const raw=new Uint8Array(await decFile.arrayBuffer());
-
-    if(raw[0]!==0xAE||raw[1]!==0x53||raw[2]!==0x47||raw[3]!==0x01){
-      setProgBar(null);
-      showFileErr('Invalid encrypted file');
-      return;
-    }
-
-    let off=4;
-
-    const nameLen=new Uint16Array(
-      raw.slice(off,off+2).buffer
-    )[0];
-
-    off+=2;
-
-    const origName=new TextDecoder().decode(
-      raw.slice(off,off+nameLen)
-    );
-
-    off+=nameLen;
-
-    const salt=raw.slice(off,off+16);
-
-    off+=16;
-
-    const totalChunks=readU32(raw.slice(off,off+4));
-
-    off+=4;
-
-    const rawKey=await deriveBits(pw,salt);
-
-    const aesKey=await importAesKey(rawKey);
-
-    const plainParts=[];
-
-    for(let i=0;i<totalChunks;i++){
-
-      const iv=raw.slice(off,off+12);
-
-      off+=12;
-
-      const encLen=readU32(raw.slice(off,off+4));
-
-      off+=4;
-
-      const encChunk=raw.slice(off,off+encLen).buffer;
-
-      off+=encLen;
-
-      const plain=await crypto.subtle.decrypt(
-        {name:'AES-GCM',iv},
-        aesKey,
-        encChunk
-      );
-
-      plainParts.push(plain);
-
-      const pct=Math.floor(((i+1)/totalChunks)*90);
-
-      setProgBar(Math.max(10,pct));
-    }
-
-    const finalBuf=concatBufs(...plainParts);
+    btn.disabled=true;
+    btn.textContent='正在驗證並解密…';
+    const raw=await decFile.arrayBuffer();
+    let cipher;
+    if(CipherV4.isV4File(raw))cipher=CipherV4;
+    else if(CipherV3.isV3File(raw))cipher=CipherV3;
+    else if(CipherV3.isLegacyFile(raw))throw new CipherV4.CipherV4Error('LEGACY_FORMAT','Legacy file');
+    else throw new CipherV4.CipherV4Error('INVALID_MAGIC','Invalid file');
+    stat('正在使用 Argon2id 衍生金鑰','ok');
+    const result=await cipher.decryptFile(raw,pw,{
+      onProgress:ratio=>setProgBar(Math.max(10,Math.floor(ratio*90)))
+    });
 
     await downloadBuf(
-      finalBuf,
-      origName,
-      'application/octet-stream'
+      result.buffer,
+      result.name,
+      result.type
     );
 
     setProgBar(100);
 
     setTimeout(()=>setProgBar(null),1000);
 
-    document.getElementById('fdec-name').textContent=origName;
+    document.getElementById('fdec-name').textContent=result.name;
 
     document.getElementById('fdec-result').classList.add('show');
 
     failCount=0;
-    stat('Decryption complete','ok');
+    stat('檔案解密完成','ok');
 
     startClearCountdown();
 
@@ -1186,10 +1133,14 @@ async function doFileDec(){
 
     setProgBar(null);
 
-    recordFail();
-    showFileErr(
-      'Decryption failed — wrong password or corrupted file'
-    );
+    if(e&&e.code==='AUTH_FAILED') recordFail();
+    if(e&&e.code==='LEGACY_FORMAT') showFileErr('舊版 PBKDF2 加密檔案不受支援');
+    else if(e&&e.code==='INVALID_MAGIC') showFileErr('不是有效的 CIPHER4 或 CIPHER3 加密檔案');
+    else if(e&&['INVALID_WORD_COUNT','UNKNOWN_WORD','CHECKSUM_MISMATCH'].includes(e.code)) showFileErr(e.message);
+    else showFileErr('解密失敗 — 復原詞／密碼錯誤、格式無效或檔案已遭修改');
+  }finally{
+    btn.disabled=!cryptoReady;
+    btn.textContent='解密檔案';
   }
 }
 
@@ -1220,23 +1171,55 @@ function clearEnc(){ clearUnified(); }
 function clearDec(){ clearUnified(); }
 function clearFileEnc(){ clearFileUnified(); }
 function clearFileDec(){ clearFileUnified(); }
-function updateCipherMask(taId,maskId,isRo){
+function updateCipherMask(taId,maskId,isRo,shouldMask=true){
   const ta=document.getElementById(taId);
   const mask=document.getElementById(maskId);
   if(!ta||!mask){return;}
+  if(!shouldMask){
+    mask.textContent='';
+    mask.style.display='none';
+    return;
+  }
+  mask.style.display='';
   const val=ta.value;
   if(!val){mask.textContent='';return;}
   mask.textContent='*'.repeat(Math.min(val.length,300));
 }
 document.addEventListener('DOMContentLoaded',()=>{
-  // 初始化 hint
-  setActionHint('idle','等待輸入','貼入密文會自動切換為解密模式');
+  const textBtn=document.getElementById('main-action-btn');
+  const fileBtn=document.getElementById('file-action-btn');
+  try{
+    CipherV3.assertReady();
+    CipherV4.assertReady();
+    CipherRecoveryPhrase.assertReady();
+    cryptoReady=true;
+    textBtn.disabled=false;
+    fileBtn.disabled=false;
+    setRecoveryUi('text',true,false);
+    setRecoveryUi('file',true,false);
+    setActionHint('idle','等待輸入','產生 8＋1 復原詞後加密；貼入 CIPHER4: 可解密');
+  }catch(e){
+    console.error(e);
+    cryptoReady=false;
+    textBtn.disabled=true;
+    fileBtn.disabled=true;
+    setActionHint('idle','Argon2id 無法使用','請確認本地加密模組與 Web Crypto 可正常載入');
+    stat('Argon2id 模組載入失敗，加解密功能已停用','ok');
+  }
 });
 </script>
 <script>
 if ('serviceWorker' in navigator) {
+  let reloadingForServiceWorker = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForServiceWorker) return;
+    reloadingForServiceWorker = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js')
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
       .catch(err => console.warn('SW registration failed:', err));
   });
 }
